@@ -4,6 +4,7 @@ set -uo pipefail
 # URLs
 STABLE_M_URL="https://github.com/SteamClientHomebrew/Millennium/releases/download/v2.35.0/millennium-v2.35.0-linux-x86_64.tar.gz"
 LT_18_URL="https://github.com/Star123451/LuaToolsLinux/releases/download/1.8/ltsteamplugin.zip"
+LT_17_URL="https://github.com/Star123451/LuaToolsLinux/releases/download/1.7/LuaTools.zip"
 REMOTE_UPDATE_URL="https://raw.githubusercontent.com/Star123451/LuaToolsLinux/main/update.sh"
 
 # Colors
@@ -50,7 +51,7 @@ install_millennium_235() {
     info "Running LuaTools update script..."
     curl -fsSL "$REMOTE_UPDATE_URL" | bash
 
-    ok "Millennium 2.35.0 and LuaTools (Legacy) installed!"
+    ok "Millennium 2.35.0 and LuaTools installed!"
 }
 
 # --- OPTION 2: PLUGIN 1.8 FOR BETA MILLENNIUM 3.0 ---
@@ -79,7 +80,33 @@ install_plugin_30() {
     fi
 }
 
-# --- OPTION 3: UNINSTALL ---
+# --- OPTION 3: PLUGIN 1.7 FOR MILLENNIUM 2.35/2.36 ---
+install_plugin_legacy() {
+    local plugins_base="${XDG_DATA_HOME:-$HOME/.local/share}/millennium/plugins"
+    local luatools_dir="$plugins_base/luatools"
+    
+    info "Installing Plugin 1.7 (LuaTools.zip) for Millennium 2.35/2.36..."
+    
+    if [ -d "$plugins_base" ]; then
+        info "Clearing Millennium plugins folder..."
+        rm -rf "$plugins_base"
+    fi
+
+    info "Creating directory: $luatools_dir"
+    mkdir -p "$luatools_dir"
+
+    info "Downloading LuaTools.zip v1.7..."
+    if curl -L "$LT_17_URL" -o /tmp/LuaTools_17.zip; then
+        info "Extracting to $luatools_dir..."
+        unzip -o /tmp/LuaTools_17.zip -d "$luatools_dir"
+        rm /tmp/LuaTools_17.zip
+        ok "Plugin 1.7 successfully extracted to $luatools_dir!"
+    else
+        fail "Failed to download LuaTools.zip"
+    fi
+}
+
+# --- OPTION 4: UNINSTALL ---
 uninstall_all() {
     info "Uninstalling everything..."
     sudo rm -rf /usr/lib/millennium /usr/share/millennium
@@ -95,24 +122,26 @@ uninstall_all() {
 # --- MENU ---
 interactive_menu() {
     echo -e "\n${BOLD}LuaTools Linux All-in-One Installer${NC}"
-    echo "1) Install Millennium 2.35.0 (Stable) + LuaTools"
-    echo "2) Install Plugin 1.8 to BETA Millennium 3.0"
-    echo "3) Uninstall Everything"
-    echo "4) Exit"
+    echo "1) Install Millennium 2.35.0 (Stable) + LuaTools Plugin"
+    echo "2) Install Only Plugin 1.8 to BETA Millennium 3.0"
+    echo "3) Install Only Plugin 1.7 to Millennium 2.35/2.36 and olders"
+    echo "4) Uninstall Everything"
+    echo "5) Exit"
     echo ""
     
     # FORÇA a leitura vir do teclado e não do curl
     exec < /dev/tty
     
-    printf "Choice [1-4]: "
+    printf "Choice [1-5]: "
     local choice=""
     read -r choice
     
     case "$choice" in
         1) install_millennium_235 ;;
         2) install_plugin_30 ;;
-        3) uninstall_all ;;
-        4) exit 0 ;;
+        3) install_plugin_legacy ;;
+        4) uninstall_all ;;
+        5) exit 0 ;;
         *) fail "Invalid option." ;;
     esac
 }
@@ -125,7 +154,8 @@ main() {
     if [[ $# -gt 0 ]]; then
         case "$1" in
             --stable) install_millennium_235 ;;
-            --plugin) install_plugin_30 ;;
+            --plugin-18) install_plugin_30 ;;
+            --plugin-17) install_plugin_legacy ;;
             --uninstall) uninstall_all ;;
             *) interactive_menu ;;
         esac
