@@ -59,7 +59,7 @@ install_millennium_235() {
     ok "Millennium 2.35.0 and LuaTools (Legacy) installed!"
 }
 
-# --- OPTION 2: PLUGIN 1.8 FOR BETA MILLENNIUM 3.0 ---
+# --- OPTION 2: PLUGIN 1.8 (ltsteamplugin) FOR MILLENNIUM 3.0 ---
 install_plugin_30() {
     local plugins_base="${XDG_DATA_HOME:-$HOME/.local/share}/millennium/plugins"
     local luatools_dir="$plugins_base/luatools"
