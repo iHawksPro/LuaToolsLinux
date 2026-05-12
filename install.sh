@@ -92,7 +92,7 @@ uninstall_all() {
     ok "System is clean."
 }
 
-# --- MENU (FIXED FOR CURL | BASH) ---
+# --- MENU ---
 interactive_menu() {
     echo -e "\n${BOLD}LuaTools Linux All-in-One Installer${NC}"
     echo "1) Install Millennium 2.35.0 (Stable) + LuaTools"
@@ -101,21 +101,19 @@ interactive_menu() {
     echo "4) Exit"
     echo ""
     
-    # O segredo está aqui: forçar a leitura do /dev/tty
+    # FORÇA a leitura vir do teclado e não do curl
+    exec < /dev/tty
+    
     printf "Choice [1-4]: "
     local choice=""
-    if [[ -r /dev/tty ]]; then
-        read -r choice < /dev/tty || true
-    else
-        read -r choice || true
-    fi
+    read -r choice
     
     case "$choice" in
         1) install_millennium_235 ;;
         2) install_plugin_30 ;;
         3) uninstall_all ;;
         4) exit 0 ;;
-        *) fail "Invalid option: $choice" ;;
+        *) fail "Invalid option." ;;
     esac
 }
 
@@ -137,12 +135,8 @@ main() {
 
     echo -e "\n${GREEN}[ FINISHED ]${NC}"
     
-    # Também fixado o read do final
-    if [[ -r /dev/tty ]]; then
-        read -p "Press Enter to exit..." < /dev/tty
-    else
-        read -p "Press Enter to exit..."
-    fi
+    exec < /dev/tty
+    read -p "Press Enter to exit..."
 }
 
 main "$@"
