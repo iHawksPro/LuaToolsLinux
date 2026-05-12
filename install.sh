@@ -96,7 +96,7 @@ uninstall_all() {
 interactive_menu() {
     echo -e "\n${BOLD}LuaTools Linux All-in-One Installer${NC}"
     echo "1) Install Millennium 2.35.0 (Stable) + LuaTools"
-    echo "2) Install Plugin 1.8 (ltsteamplugin) to Millennium 3.0"
+    echo "2) Install Plugin 1.8 to BETA Millennium 3.0"
     echo "3) Uninstall Everything"
     echo "4) Exit"
     echo ""
