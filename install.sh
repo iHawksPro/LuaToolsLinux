@@ -230,6 +230,50 @@ run_fix_deps() {
     curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/fix-deps | bash || warn "fix-deps failed, but continuing..."
 }
 
+# ---------- Install Python requirements for LuaTools ----------
+install_python_requirements() {
+    info "Installing Python requirements (httpx, beautifulsoup4, ruamel.yaml)..."
+
+    local venv_paths=(
+        "$HOME/.local/share/millennium/plugins/LuaToolsLinux/.venv"
+        "$HOME/.steam/steam/millennium/plugins/LuaToolsLinux/.venv"
+        "$HOME/.steam/steam/steamui/millennium/plugins/LuaToolsLinux/.venv"
+    )
+    local pip_cmd=""
+    for vp in "${venv_paths[@]}"; do
+        if [[ -f "$vp/bin/pip" ]]; then
+            pip_cmd="$vp/bin/pip"
+            info "Found virtual environment at $vp"
+            break
+        fi
+    done
+
+    if [[ -z "$pip_cmd" ]]; then
+        warn "No virtual environment found for LuaTools plugin. Trying system pip (user install)."
+        if command -v pip3 >/dev/null; then
+            pip_cmd="pip3 install --user"
+        elif command -v pip >/dev/null; then
+            pip_cmd="pip install --user"
+        else
+            warn "pip not found. Skipping Python requirements installation."
+            return
+        fi
+    else
+        pip_cmd="$pip_cmd install"
+    fi
+
+    local packages=("httpx==0.27.2" "beautifulsoup4" "ruamel.yaml==0.18.6")
+    for pkg in "${packages[@]}"; do
+        info "Installing $pkg ..."
+        if $pip_cmd "$pkg" 2>/dev/null; then
+            ok "Installed $pkg"
+        else
+            warn "Failed to install $pkg"
+        fi
+    done
+    ok "Python requirements installation completed."
+}
+
 # ---------- Additional Ubuntu/Debian libssl-dev:i386 prompt ----------
 check_libssl_dev() {
     local family=$(get_distro_family)
@@ -280,6 +324,7 @@ install_plugin_for_version() {
     info "Installing LuaTools plugin for Millennium version ${version:-beta}"
     clean_plugin_dir
     run_remote_script "$plugin_url"
+    install_python_requirements
     ok "Plugin installed."
 }
 
@@ -296,7 +341,6 @@ install_all() {
     run_fix_deps
     force_close_steam
 
-    # Always reinstall Millennium (beta) to ensure clean state
     install_millennium_beta
     local new_version=$(get_millennium_version)
     install_plugin_for_version "$new_version"
@@ -341,7 +385,7 @@ fix_purchase_error() {
 
 fix_missing_keys() {
     info "Fixing 'Missing Keys'..."
-    run_fix_deps
+    # Removido run_fix_deps conforme solicitado
     rm -rf ~/.config/SLSsteam ~/.config/headcrab
     info "Removed ~/.config/SLSsteam and ~/.config/headcrab"
     if [[ ! -d "$HOME/enter-the-wired" ]]; then
