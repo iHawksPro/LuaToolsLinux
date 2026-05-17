@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#(!/usr/bin/env bash
 set -euo pipefail
 
 SELF_REPO_BASE="https://raw.githubusercontent.com/Star123451/LuaToolsLinux/main"
