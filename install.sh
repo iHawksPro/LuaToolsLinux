@@ -430,6 +430,76 @@ install_millennium_flow() {
     start_steam
 }
 
+fix_remove_piracy_blocks() {
+    local theme_css_dir="$HOME/.steam/steam/millennium/themes/Steam/src/css"
+    local files_to_fix=(
+        "libraryroot.custom.css"
+        "overlay.custom.css"
+        "regular.css"
+        "startupLogin.custom.css"
+        "webkit.css"
+        "steam/gamepage.css"
+    )
+
+    echo ""
+    if [[ ! -d "$theme_css_dir" ]]; then
+        warn "Theme CSS directory not found: $theme_css_dir"
+        warn "Make sure Millennium and the theme are installed correctly."
+        return 1
+    fi
+    ok "Directory found: $theme_css_dir"
+
+    local any_fixed=false
+
+    for filename in "${files_to_fix[@]}"; do
+        local filepath="$theme_css_dir/$filename"
+        if [[ ! -f "$filepath" ]]; then
+            echo "$filename -> NOT FOUND, skipping"
+            continue
+        fi
+
+        echo -n "$filename ... "
+
+        # Backup
+        cp "$filepath" "$filepath.bak"
+
+        # Remover linhas com a mensagem
+        sed -i '/Pls remove any piracy plugin/d' "$filepath"
+
+        # Remover linhas com seletores de luatools
+        sed -i '/\[class\*="luatools"/d' "$filepath"
+        sed -i '/\[data-millennium-plugin\*="luatools"/d' "$filepath"
+
+        # Remover linhas com seletores de manilua
+        sed -i '/\[class\*="manilua"/d' "$filepath"
+        sed -i '/\[data-millennium-plugin\*="manilua"/d' "$filepath"
+
+        # Remover linhas com seletores de lumea
+        sed -i '/\[class\*="lumea"/d' "$filepath"
+        sed -i '/\[data-millennium-plugin\*="lumea"/d' "$filepath"
+
+        # Remover linhas vazias
+        sed -i '/^[[:space:]]*$/d' "$filepath"
+
+        # Verificar se houve mudança
+        if ! cmp -s "$filepath" "$filepath.bak"; then
+            echo "✔ Removed"
+            any_fixed=true
+        else
+            rm -f "$filepath.bak"
+            echo "○ No block found"
+        fi
+    done
+
+    echo ""
+    if $any_fixed; then
+        ok "Anti-piracy blocks removed. Restart Steam for changes to take effect."
+        info "You can restart Steam with: pkill -9 steam; nohup steam >/dev/null 2>&1 &"
+    else
+        warn "No changes made. The theme may already be clean."
+    fi
+}
+
 # ---------- Fixes menu ----------
 fix_purchase_error() {
     info "Fixing 'Purchase error' by running headcrab script..."
@@ -481,16 +551,18 @@ fix_menu() {
         echo "2) Missing Keys"
         echo "3) No licenses (information)"
         echo "4) Run fix-deps (install system dependencies)"
-        echo "5) Back to main menu"
+        echo "5) Remove anti-piracy blocks from Steam theme CSS"
+        echo "6) Back to main menu"
         echo ""
-        printf "Choose an option [1-5]: " > /dev/tty
+        printf "Choose an option [1-6]: " > /dev/tty
         local choice; read -r choice < /dev/tty
         case "$choice" in
             1) fix_purchase_error ;;
             2) fix_missing_keys ;;
             3) fix_no_licenses_info ;;
             4) run_fix_deps ;;
-            5) break ;;
+            5) fix_remove_piracy_blocks ;;
+            6) break ;;
             *) warn "Invalid option." ;;
         esac
     done
@@ -499,7 +571,7 @@ fix_menu() {
 # ---------- Uninstall (includes accela/slssteam removal) ----------
 uninstall_all_flow() {
     info "Uninstalling everything (Millennium, plugin, accela, slssteam)..."
-    
+
     # 1. Remove Millennium
     info "Removing Millennium Framework files..."
     sudo rm -rf /usr/lib/millennium /usr/share/millennium \
