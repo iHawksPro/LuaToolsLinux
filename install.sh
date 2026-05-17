@@ -147,8 +147,8 @@ check_decky_loader() {
         echo "  1) Uninstall Decky Loader (recommended)"
         echo "  2) Continue anyway (risky)"
         local response=""
-        printf "Choose [1/2]: "
-        read -r response
+        printf "Choose [1/2]: " > /dev/tty
+        read -r response < /dev/tty
         case "$response" in
             1)
                 info "Uninstalling Decky Loader..."
@@ -239,7 +239,6 @@ check_libssl_dev() {
         return
     fi
 
-    # Check if libssl-dev:i386 is already installed
     if dpkg -s libssl-dev:i386 2>/dev/null | grep -q '^Status:.*installed'; then
         ok "libssl-dev:i386 is already installed."
         return
@@ -248,8 +247,8 @@ check_libssl_dev() {
     warn "libssl-dev:i386 (32-bit development libraries) is missing."
     echo "This library is required for 32-bit compatibility with some components."
     local response=""
-    printf "Do you want to install libssl-dev:i386 now? [y/N]: "
-    read -r response
+    printf "Do you want to install libssl-dev:i386 now? [y/N]: " > /dev/tty
+    read -r response < /dev/tty
     if [[ "$response" =~ ^[Yy]$ ]]; then
         info "Enabling i386 architecture and installing libssl-dev:i386..."
         sudo dpkg --add-architecture i386 || true
@@ -325,8 +324,8 @@ install_millennium_flow() {
         ok "Millennium already installed. Version: ${current_version:-unknown}"
         echo ""
         local response=""
-        printf "Reinstall/update LuaTools plugin? [y/N]: "
-        read -r response
+        printf "Reinstall/update LuaTools plugin? [y/N]: " > /dev/tty
+        read -r response < /dev/tty
         if [[ "$response" =~ ^[Yy]$ ]]; then
             install_plugin_for_version "$current_version"
         else
@@ -382,7 +381,7 @@ fix_no_licenses_info() {
     echo "  - Ensure the path to accela is correctly set (to ~/.local/share/ACCELA or wherever accela is located)."
     echo "  - In the accela menu, enable the option: 'Limit downloads to Steam Library'."
     echo ""
-    read -p "Press Enter to continue..." -r
+    read -p "Press Enter to continue..." < /dev/tty
 }
 
 fix_menu() {
@@ -394,8 +393,8 @@ fix_menu() {
         echo "3) No licenses (information)"
         echo "4) Back to main menu"
         echo ""
-        printf "Choose an option [1-4]: "
-        local choice; read -r choice
+        printf "Choose an option [1-4]: " > /dev/tty
+        local choice; read -r choice < /dev/tty
         case "$choice" in
             1) fix_purchase_error ;;
             2) fix_missing_keys ;;
@@ -435,8 +434,8 @@ interactive_menu() {
         echo "5) Fix common issues"
         echo "6) Cancel"
         echo ""
-        printf "Choose an option [1-6]: "
-        local choice; read -r choice
+        printf "Choose an option [1-6]: " > /dev/tty
+        local choice; read -r choice < /dev/tty
         case "$choice" in
             1) install_all ; break ;;
             2) install_millennium_flow ; break ;;
@@ -531,7 +530,7 @@ EOF
     esac
 
     echo ""
-    read -p "Press Enter to close this terminal..." -r
+    read -p "Press Enter to close this terminal..." < /dev/tty
 }
 
 main "$@"
