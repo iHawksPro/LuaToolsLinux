@@ -531,7 +531,7 @@ interactive_menu() {
         echo ""
         echo -e "${BOLD}LuaTools Installer${NC}"
         echo "1) Install All (reinstall Millennium + plugin + accela & slssteam)"
-        echo "2) Install/Reinstall LuaTools plugin only (keep Millennium)"
+        echo "2) Install/Reinstall Millennium + LuaTools plugin"
         echo "3) Install accela and slssteam only"
         echo "4) Uninstall Everything (Millennium + plugin + accela + slssteam)"
         echo "5) Fix common issues"
@@ -608,7 +608,7 @@ Usage: install.sh [option] [--debug]
 
 Options:
     1, --install-all     Install all (Millennium + plugin + accela & slssteam)
-    2, --millennium      Install/Reinstall LuaTools plugin only (keep Millennium)
+    2, --millennium      Install/Reinstall Millennium + LuaTools plugin
     3, --accela          Install accela and slssteam only
     4, --uninstall       Uninstall everything (Millennium + plugin + accela + slssteam)
     5, --fix             Open the common issues fix menu
