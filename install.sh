@@ -84,6 +84,23 @@ get_distro() {
     fi
 }
 
+get_distro_family() {
+    if [[ -f /etc/os-release ]]; then
+        . /etc/os-release
+        if [[ "$ID" == "ubuntu" || "$ID" == "debian" || "$ID_LIKE" =~ (debian|ubuntu) ]]; then
+            echo "debian"
+        elif [[ "$ID" == "fedora" || "$ID" == "rhel" || "$ID" == "centos" || "$ID_LIKE" =~ (fedora|rhel) ]]; then
+            echo "fedora"
+        elif [[ "$ID" == "arch" || "$ID_LIKE" =~ arch ]]; then
+            echo "arch"
+        else
+            echo "unknown"
+        fi
+    else
+        echo "unknown"
+    fi
+}
+
 suggest_native_steam_install() {
     local distro=$(get_distro)
     case "$distro" in
@@ -159,9 +176,7 @@ get_millennium_version() {
     result=$(sh -c 'pacman -Qs millennium 2>/dev/null || dpkg -l | grep millennium 2>/dev/null || rpm -qa | grep millennium 2>/dev/null || flatpak list | grep -i millennium 2>/dev/null || grep -i "version" ~/.local/share/millennium/bootstrap.log 2>/dev/null')
 
     if [[ -n "$result" ]]; then
-        # Try to extract semantic version (e.g., 2.36.0)
         local ver=""
-        # Match patterns like: 2.36.0, 2.36.0-1, v2.36.0
         if [[ "$result" =~ [v]?([0-9]+\.[0-9]+\.[0-9]+) ]]; then
             ver="${BASH_REMATCH[1]}"
         elif [[ "$result" =~ version[\"[:space:]]*:[\"[:space:]]*([0-9]+\.[0-9]+\.[0-9]+) ]]; then
@@ -171,7 +186,6 @@ get_millennium_version() {
         fi
         echo "$ver"
     else
-        # Fallback to file-based version detection
         if [[ -f "/usr/lib/millennium/version.txt" ]]; then
             cat "/usr/lib/millennium/version.txt" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1
         elif [[ -f "/usr/lib/millennium/libmillennium.so" ]]; then
@@ -216,6 +230,39 @@ clean_plugin_dir() {
 run_fix_deps() {
     info "Running dependency fix script (fix-deps)..."
     curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/fix-deps | bash || warn "fix-deps failed, but continuing..."
+}
+
+# ---------- Additional Ubuntu/Debian libssl-dev:i386 prompt ----------
+check_libssl_dev() {
+    local family=$(get_distro_family)
+    if [[ "$family" != "debian" ]]; then
+        return
+    fi
+
+    # Check if libssl-dev:i386 is already installed
+    if dpkg -s libssl-dev:i386 2>/dev/null | grep -q '^Status:.*installed'; then
+        ok "libssl-dev:i386 is already installed."
+        return
+    fi
+
+    warn "libssl-dev:i386 (32-bit development libraries) is missing."
+    echo "This library is required for 32-bit compatibility with some components."
+    local response=""
+    printf "Do you want to install libssl-dev:i386 now? [y/N]: "
+    read -r response
+    if [[ "$response" =~ ^[Yy]$ ]]; then
+        info "Enabling i386 architecture and installing libssl-dev:i386..."
+        sudo dpkg --add-architecture i386 || true
+        sudo apt update || true
+        sudo apt install -y libssl-dev:i386 || warn "Installation failed. You may need to run 'sudo apt install -f' manually."
+        if dpkg -s libssl-dev:i386 2>/dev/null | grep -q '^Status:.*installed'; then
+            ok "libssl-dev:i386 installed successfully."
+        else
+            warn "libssl-dev:i386 could not be installed. Some features may not work."
+        fi
+    else
+        info "Skipping libssl-dev:i386 installation."
+    fi
 }
 
 # ---------- Installers ----------
@@ -443,6 +490,9 @@ main() {
     else
         warn "Accela: NOT installed"
     fi
+
+    # Additional check for Ubuntu/Debian: prompt for libssl-dev:i386
+    check_libssl_dev
 
     # Handle command line arguments
     case "${1:-}" in
