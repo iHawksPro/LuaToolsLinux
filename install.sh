@@ -194,19 +194,74 @@ get_millennium_version() {
     fi
 }
 
-# ---------- Accela detection ----------
+# ---------- Accela detection (improved for ACCELA.AppImage) ----------
 is_accela_installed() {
-    [[ -d "$HOME/.local/share/ACCELA" ]] && ( [[ -f "$HOME/.local/share/ACCELA/accela" ]] || [[ -f "$HOME/.local/share/ACCELA/run.sh" ]] )
+    local accela_dir="$HOME/.local/share/ACCELA"
+    if [[ ! -d "$accela_dir" ]]; then
+        return 1
+    fi
+    if [[ -f "$accela_dir/run.sh" && -x "$accela_dir/run.sh" ]]; then
+        return 0
+    fi
+    while IFS= read -r file; do
+        if [[ -f "$file" && -x "$file" ]]; then
+            if [[ "$(basename "$file")" == "ACCELA.AppImage" ]]; then
+                return 0
+            fi
+            if file "$file" 2>/dev/null | grep -q "ELF.*executable"; then
+                return 0
+            fi
+        fi
+    done < <(find "$accela_dir" -maxdepth 1 -type f -executable 2>/dev/null)
+    return 1
 }
 
 detect_accela_type() {
-    if [[ -f "$HOME/.local/share/ACCELA/accela" ]] && file "$HOME/.local/share/ACCELA/accela" 2>/dev/null | grep -q "ELF.*executable"; then
-        echo "appimage"
-    elif [[ -f "$HOME/.local/share/ACCELA/run.sh" ]]; then
-        echo "run.sh"
-    else
-        echo "unknown"
+    local accela_dir="$HOME/.local/share/ACCELA"
+    if [[ ! -d "$accela_dir" ]]; then
+        echo "none"
+        return
     fi
+    if [[ -f "$accela_dir/run.sh" && -x "$accela_dir/run.sh" ]]; then
+        echo "run.sh"
+        return
+    fi
+    if [[ -f "$accela_dir/ACCELA.AppImage" && -x "$accela_dir/ACCELA.AppImage" ]]; then
+        echo "appimage"
+        return
+    fi
+    while IFS= read -r file; do
+        if [[ -f "$file" && -x "$file" ]]; then
+            if file "$file" 2>/dev/null | grep -q "ELF.*executable"; then
+                echo "appimage"
+                return
+            fi
+        fi
+    done < <(find "$accela_dir" -maxdepth 1 -type f -executable 2>/dev/null)
+    echo "unknown"
+}
+
+get_accela_filename() {
+    local accela_dir="$HOME/.local/share/ACCELA"
+    if [[ ! -d "$accela_dir" ]]; then
+        echo ""
+        return
+    fi
+    if [[ -f "$accela_dir/run.sh" && -x "$accela_dir/run.sh" ]]; then
+        echo "run.sh"
+        return
+    fi
+    if [[ -f "$accela_dir/ACCELA.AppImage" && -x "$accela_dir/ACCELA.AppImage" ]]; then
+        echo "ACCELA.AppImage"
+        return
+    fi
+    while IFS= read -r file; do
+        if [[ -f "$file" && -x "$file" ]]; then
+            basename "$file"
+            return
+        fi
+    done < <(find "$accela_dir" -maxdepth 1 -type f -executable 2>/dev/null)
+    echo ""
 }
 
 # ---------- Plugin directory cleanup ----------
@@ -330,7 +385,6 @@ install_plugin_for_version() {
 
 install_accela_and_slssteam() {
     info "Installing accela and slssteam via enter-the-wired..."
-    run_fix_deps
     curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/enter-the-wired | bash || warn "Accela installation failed."
     ok "Accela and slssteam installation completed."
 }
@@ -385,7 +439,6 @@ fix_purchase_error() {
 
 fix_missing_keys() {
     info "Fixing 'Missing Keys'..."
-    # Removido run_fix_deps conforme solicitado
     rm -rf ~/.config/SLSsteam ~/.config/headcrab
     info "Removed ~/.config/SLSsteam and ~/.config/headcrab"
     if [[ ! -d "$HOME/enter-the-wired" ]]; then
@@ -427,35 +480,49 @@ fix_menu() {
         echo "1) Purchase error (headcrab)"
         echo "2) Missing Keys"
         echo "3) No licenses (information)"
-        echo "4) Back to main menu"
+        echo "4) Run fix-deps (install system dependencies)"
+        echo "5) Back to main menu"
         echo ""
-        printf "Choose an option [1-4]: " > /dev/tty
+        printf "Choose an option [1-5]: " > /dev/tty
         local choice; read -r choice < /dev/tty
         case "$choice" in
             1) fix_purchase_error ;;
             2) fix_missing_keys ;;
             3) fix_no_licenses_info ;;
-            4) break ;;
+            4) run_fix_deps ;;
+            5) break ;;
             *) warn "Invalid option." ;;
         esac
     done
 }
 
-# ---------- Uninstall ----------
+# ---------- Uninstall (includes accela/slssteam removal) ----------
 uninstall_all_flow() {
-    info "Uninstalling everything..."
+    info "Uninstalling everything (Millennium, plugin, accela, slssteam)..."
+    
+    # 1. Remove Millennium
+    info "Removing Millennium Framework files..."
     sudo rm -rf /usr/lib/millennium /usr/share/millennium \
                 "${XDG_CONFIG_HOME:-$HOME/.config}/millennium" \
                 "${XDG_DATA_HOME:-$HOME/.local/share}/millennium"
     if [ -f "/usr/bin/steam.millennium.bak" ]; then
+        info "Restoring original Steam executable..."
         sudo mv /usr/bin/steam.millennium.bak /usr/bin/steam
     fi
     rm -f "${HOME}/.steam/steam/ubuntu12_32/libXtst.so.6"
+
+    # 2. Remove LuaTools plugin directories
+    info "Removing LuaTools plugin remnants..."
     rm -rf "${XDG_DATA_HOME:-$HOME/.local/share}/luatools" \
            "${XDG_CONFIG_HOME:-$HOME/.config}/luatools" \
            "${HOME}/.luatools" 2>/dev/null || true
     clean_plugin_dir
-    ok "Uninstall finished."
+
+    # 3. Uninstall accela and slssteam using the official uninstall script
+    info "Uninstalling accela and slssteam via enter-the-wired uninstaller..."
+    curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/uninstall | bash || warn "Accela/slssteam uninstall may have failed."
+
+    ok "Full uninstall completed."
 }
 
 # ---------- Main menu ----------
@@ -466,7 +533,7 @@ interactive_menu() {
         echo "1) Install All (reinstall Millennium + plugin + accela & slssteam)"
         echo "2) Install/Reinstall LuaTools plugin only (keep Millennium)"
         echo "3) Install accela and slssteam only"
-        echo "4) Uninstall Everything"
+        echo "4) Uninstall Everything (Millennium + plugin + accela + slssteam)"
         echo "5) Fix common issues"
         echo "6) Cancel"
         echo ""
@@ -514,8 +581,9 @@ main() {
 
     if is_accela_installed; then
         local atype=$(detect_accela_type)
+        local fname=$(get_accela_filename)
         if [[ "$atype" == "appimage" ]]; then
-            warn "Accela: installed as AppImage. You may need to manually set the path in LuaTools menu (point to ~/.local/share/ACCELA/accela)."
+            warn "Accela: installed as AppImage (file: $fname). You may need to manually set the path in LuaTools menu (point to ~/.local/share/ACCELA/$fname)."
         elif [[ "$atype" == "run.sh" ]]; then
             ok "Accela: installed as run.sh script."
         else
@@ -542,7 +610,7 @@ Options:
     1, --install-all     Install all (Millennium + plugin + accela & slssteam)
     2, --millennium      Install/Reinstall LuaTools plugin only (keep Millennium)
     3, --accela          Install accela and slssteam only
-    4, --uninstall       Uninstall everything
+    4, --uninstall       Uninstall everything (Millennium + plugin + accela + slssteam)
     5, --fix             Open the common issues fix menu
     --cancel             Exit without installing
     --debug              Enable debug output
