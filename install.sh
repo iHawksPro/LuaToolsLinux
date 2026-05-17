@@ -167,14 +167,12 @@ is_millennium_installed() {
     local result
     result=$(sh -c 'pacman -Qs millennium 2>/dev/null || dpkg -l | grep millennium 2>/dev/null || rpm -qa | grep millennium 2>/dev/null || flatpak list | grep -i millennium 2>/dev/null || grep -i "version" ~/.local/share/millennium/bootstrap.log 2>/dev/null')
     [[ -n "$result" ]] && return 0
-    # Fallback to file check
     [[ -f "/usr/lib/millennium/libmillennium.so" ]] || [[ -f "/usr/bin/steam.millennium.bak" ]]
 }
 
 get_millennium_version() {
     local result
     result=$(sh -c 'pacman -Qs millennium 2>/dev/null || dpkg -l | grep millennium 2>/dev/null || rpm -qa | grep millennium 2>/dev/null || flatpak list | grep -i millennium 2>/dev/null || grep -i "version" ~/.local/share/millennium/bootstrap.log 2>/dev/null')
-
     if [[ -n "$result" ]]; then
         local ver=""
         if [[ "$result" =~ [v]?([0-9]+\.[0-9]+\.[0-9]+) ]]; then
@@ -238,12 +236,10 @@ check_libssl_dev() {
     if [[ "$family" != "debian" ]]; then
         return
     fi
-
     if dpkg -s libssl-dev:i386 2>/dev/null | grep -q '^Status:.*installed'; then
         ok "libssl-dev:i386 is already installed."
         return
     fi
-
     warn "libssl-dev:i386 (32-bit development libraries) is missing."
     echo "This library is required for 32-bit compatibility with some components."
     local response=""
@@ -288,33 +284,29 @@ install_plugin_for_version() {
 }
 
 install_accela_and_slssteam() {
-    info "Installing accela and slssteam..."
+    info "Installing accela and slssteam via enter-the-wired..."
     run_fix_deps
     curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/enter-the-wired | bash || warn "Accela installation failed."
     ok "Accela and slssteam installation completed."
 }
 
-# ---------- Install all (Millennium + plugin + accela) ----------
+# ---------- Option 1: Install All (forces Millennium reinstall) ----------
 install_all() {
-    info "Starting full installation (Millennium + LuaTools plugin + accela & slssteam)..."
+    info "Starting FULL installation (Millennium + plugin + accela & slssteam)..."
     run_fix_deps
     force_close_steam
 
-    if ! is_millennium_installed; then
-        install_millennium_beta
-        local new_version=$(get_millennium_version)
-        install_plugin_for_version "$new_version"
-    else
-        warn "Millennium already installed. Reinstalling plugin..."
-        local current_version=$(get_millennium_version)
-        install_plugin_for_version "$current_version"
-    fi
+    # Always reinstall Millennium (beta) to ensure clean state
+    install_millennium_beta
+    local new_version=$(get_millennium_version)
+    install_plugin_for_version "$new_version"
 
     install_accela_and_slssteam
     start_steam
     ok "Full installation complete. Steam has been started."
 }
 
+# ---------- Option 2: Only Millennium + plugin (reinstall plugin if Millennium exists) ----------
 install_millennium_flow() {
     run_fix_deps
     force_close_steam
@@ -427,8 +419,8 @@ interactive_menu() {
     while true; do
         echo ""
         echo -e "${BOLD}LuaTools Installer${NC}"
-        echo "1) Install All (Millennium + plugin + accela & slssteam)"
-        echo "2) Install/Reinstall Millennium + LuaTools plugin only"
+        echo "1) Install All (reinstall Millennium + plugin + accela & slssteam)"
+        echo "2) Install/Reinstall LuaTools plugin only (keep Millennium)"
         echo "3) Install accela and slssteam only"
         echo "4) Uninstall Everything"
         echo "5) Fix common issues"
@@ -468,7 +460,6 @@ main() {
     check_steam_compatibility
     check_decky_loader
 
-    # Status report before menu
     echo ""
     if is_millennium_installed; then
         local mver=$(get_millennium_version)
@@ -490,10 +481,8 @@ main() {
         warn "Accela: NOT installed"
     fi
 
-    # Additional check for Ubuntu/Debian: prompt for libssl-dev:i386
     check_libssl_dev
 
-    # Handle command line arguments
     case "${1:-}" in
         1|--install-all)       install_all ;;
         2|--millennium)        install_millennium_flow ;;
@@ -507,7 +496,7 @@ Usage: install.sh [option] [--debug]
 
 Options:
     1, --install-all     Install all (Millennium + plugin + accela & slssteam)
-    2, --millennium      Install/Reinstall Millennium + LuaTools plugin only
+    2, --millennium      Install/Reinstall LuaTools plugin only (keep Millennium)
     3, --accela          Install accela and slssteam only
     4, --uninstall       Uninstall everything
     5, --fix             Open the common issues fix menu
