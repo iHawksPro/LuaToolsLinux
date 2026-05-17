@@ -530,7 +530,7 @@ interactive_menu() {
     while true; do
         echo ""
         echo -e "${BOLD}LuaTools Installer${NC}"
-        echo "1) Install All (reinstall Millennium + plugin + accela & slssteam)"
+        echo "1) Install All Millennium + plugin + accela & slssteam"
         echo "2) Install/Reinstall Millennium + LuaTools plugin"
         echo "3) Install accela and slssteam only"
         echo "4) Uninstall Everything (Millennium + plugin + accela + slssteam)"
