@@ -2,9 +2,15 @@
 set -euo pipefail
 
 SELF_REPO_BASE="https://raw.githubusercontent.com/Star123451/LuaToolsLinux/main"
-LUATOOLS_MILLENNIUM_URL="$SELF_REPO_BASE/update.sh"
 LUATOOLS_LEGACY_URL="$SELF_REPO_BASE/update_legacy.sh"
 ENTERTHEWIRED_REPO="https://github.com/ciscosweater/enter-the-wired.git"
+
+# GitHub release settings for plugin zip
+REPO_OWNER="Star123451"
+REPO_NAME="LuaToolsLinux"
+RELEASE_ASSET_NAME="ltsteamplugin.zip"
+GITHUB_API_URL="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest"
+PLUGIN_NAME="luatools"
 
 CYAN='\033[0;36m'
 GREEN='\033[0;32m'
@@ -21,37 +27,172 @@ fail() { echo -e "${RED}[FAIL]${NC} $*"; exit 1; }
 debug() { $DEBUG && echo -e "${CYAN}[DEBUG]${NC} $*"; }
 
 require_cmd() { command -v "$1" >/dev/null 2>&1 || fail "Missing required command: $1"; }
-run_remote_script() {
-    local url="$1"
-    info "Running: $url"
-    curl -fsSL "$url" | bash
+
+# ---------- Helper: extract zip ----------
+extract_zip() {
+    local archive_path="$1"
+    local destination="$2"
+    mkdir -p "$destination"
+    if command -v unzip &>/dev/null; then
+        unzip -qo "$archive_path" -d "$destination"
+        return 0
+    fi
+    if command -v python3 &>/dev/null; then
+        python3 - "$archive_path" "$destination" <<'PY'
+import sys, zipfile
+archive = sys.argv[1]
+dest = sys.argv[2]
+with zipfile.ZipFile(archive, "r") as zf:
+    zf.extractall(dest)
+PY
+        return 0
+    fi
+    return 1
+}
+
+# ---------- Install plugin from GitHub release ----------
+install_plugin_from_release() {
+    info "Installing LuaTools plugin from latest GitHub release..."
+    if ! command -v python3 &>/dev/null; then
+        fail "python3 is required to fetch release info"
+    fi
+    local tmp_dir
+    tmp_dir="$(mktemp -d)"
+    trap 'rm -rf "$tmp_dir"' EXIT
+    local meta_file="$tmp_dir/release.json"
+    if ! curl -fsSL "$GITHUB_API_URL" -o "$meta_file"; then
+        fail "Failed to fetch latest release metadata"
+    fi
+    local latest_tag asset_url
+    mapfile -t release_info < <(
+        python3 - "$meta_file" "$RELEASE_ASSET_NAME" <<'PY'
+import json, sys
+meta_file = sys.argv[1]
+asset_name = sys.argv[2]
+with open(meta_file, 'r', encoding='utf-8') as f:
+    data = json.load(f)
+tag = str(data.get('tag_name', '')).strip()
+asset_url = ''
+for asset in data.get('assets', []):
+    if str(asset.get('name', '')).strip() == asset_name:
+        asset_url = str(asset.get('browser_download_url', '')).strip()
+        break
+print(tag)
+print(asset_url)
+PY
+    )
+    latest_tag="${release_info[0]}"
+    asset_url="${release_info[1]}"
+    if [[ -z "$asset_url" ]]; then
+        fail "Release asset '$RELEASE_ASSET_NAME' not found"
+    fi
+    info "Latest release: ${latest_tag:-unknown}"
+    local zip_file="$tmp_dir/$RELEASE_ASSET_NAME"
+    info "Downloading $RELEASE_ASSET_NAME ..."
+    if ! curl -fL "$asset_url" -o "$zip_file"; then
+        fail "Download failed"
+    fi
+    local millennium_dir=""
+    local candidates=(
+        "$HOME/.local/share/millennium/plugins"
+        "$HOME/.millennium/plugins"
+        "$HOME/.steam/steam/millennium/plugins"
+        "$HOME/.local/share/Steam/millennium/plugins"
+    )
+    for dir in "${candidates[@]}"; do
+        if [[ -d "$dir" ]]; then
+            millennium_dir="$dir"
+            break
+        fi
+    done
+    if [[ -z "$millennium_dir" ]]; then
+        millennium_dir="$HOME/.local/share/millennium/plugins"
+        mkdir -p "$millennium_dir"
+        warn "Created plugins directory at $millennium_dir"
+    fi
+    local install_dir="$millennium_dir/$PLUGIN_NAME"
+    info "Installing to $install_dir"
+    if [[ -d "$install_dir" ]]; then
+        rm -rf "$install_dir"
+    fi
+    mkdir -p "$install_dir"
+    if ! extract_zip "$zip_file" "$install_dir"; then
+        fail "Extraction failed"
+    fi
+    ok "Plugin installed (version ${latest_tag:-latest})"
+}
+
+# ---------- Show status (triagem) ----------
+show_status() {
+    echo ""
+    if is_millennium_installed; then
+        local mver=$(get_millennium_version)
+        ok "Millennium: installed (version ${mver:-unknown})"
+    else
+        warn "Millennium: NOT installed"
+    fi
+    if is_accela_installed; then
+        local atype=$(detect_accela_type)
+        local fname=$(get_accela_filename)
+        if [[ "$atype" == "appimage" ]]; then
+            warn "Accela: installed as AppImage (file: $fname). You may need to manually set the path in LuaTools menu (point to ~/.local/share/ACCELA/$fname)."
+        elif [[ "$atype" == "run.sh" ]]; then
+            ok "Accela: installed as run.sh script."
+        else
+            ok "Accela: installed (type unknown)"
+        fi
+    else
+        warn "Accela: NOT installed"
+    fi
+}
+
+# ---------- Post-install instructions (orange box) ----------
+show_post_install_instructions() {
+    if ! is_accela_installed; then
+        return
+    fi
+    echo ""
+    echo -e "${BOLD}${YELLOW}+----------------------------------------------------------------------+${NC}"
+    echo -e "${BOLD}${YELLOW}|                    IMPORTANT: Accela Configuration                    |${NC}"
+    echo -e "${BOLD}${YELLOW}+----------------------------------------------------------------------+${NC}"
+    echo -e "${BOLD}${YELLOW}|${NC}  1) Open accela, config options/downloads.                           ${BOLD}${YELLOW}|${NC}"
+    echo -e "${BOLD}${YELLOW}|${NC}  2) Ensure the option ${BOLD}\"Limit downloads to Steam Library\"${NC} is ${BOLD}ENABLED${NC}.              ${BOLD}${YELLOW}|${NC}"
+    echo -e "${BOLD}${YELLOW}|${NC}  3) Go to Lua tools menu on Steam/config ${BOLD}\"External Launcher (ACCELA)\"${NC}               ${BOLD}${YELLOW}|${NC}"
+    echo -e "${BOLD}${YELLOW}|${NC}     and click the folder icon.                                        ${BOLD}${YELLOW}|${NC}"
+    echo -e "${BOLD}${YELLOW}|${NC}  4) Navigate to ${BOLD}~/.local/share/ACCELA${NC} and select:                                   ${BOLD}${YELLOW}|${NC}"
+    echo -e "${BOLD}${YELLOW}|${NC}       - ${GREEN}run.sh${NC} (if installed as script) or                                     ${BOLD}${YELLOW}|${NC}"
+    echo -e "${BOLD}${YELLOW}|${NC}       - ${GREEN}ACCELA.AppImage${NC} (if using AppImage)                                  ${BOLD}${YELLOW}|${NC}"
+    echo -e "${BOLD}${YELLOW}|${NC}  5) Click the save icon (diskette).                                      ${BOLD}${YELLOW}|${NC}"
+    echo -e "${BOLD}${YELLOW}|${NC}  6) You can now add your game directly from the game page.                ${BOLD}${YELLOW}|${NC}"
+    echo -e "${BOLD}${YELLOW}+----------------------------------------------------------------------+${NC}"
+    echo ""
 }
 
 # ---------- Pre-flight checks ----------
 check_internet() {
     info "Checking internet connectivity..."
     if ! curl -fsS --head "https://github.com" >/dev/null 2>&1; then
-        fail "No internet connection. Please check your network."
+        fail "No internet connection"
     fi
-    ok "Internet is reachable."
+    ok "Internet reachable"
 }
 
 check_architecture() {
     if [[ "$(uname -m)" != "x86_64" ]]; then
-        fail "Unsupported architecture: $(uname -m). Millennium only works on x86_64."
+        fail "Unsupported architecture: $(uname -m). Only x86_64 works."
     fi
-    ok "Architecture x86_64 OK."
+    ok "Architecture x86_64 OK"
 }
 
 force_close_steam() {
     if pgrep -x "steam" >/dev/null; then
-        warn "Steam is currently running. Closing it now..."
+        warn "Steam is running. Closing it now..."
         pkill -x steam || true
         sleep 3
         if pgrep -x "steam" >/dev/null; then
             warn "Steam still running. Please close it manually."
         else
-            ok "Steam closed."
+            ok "Steam closed"
         fi
     fi
 }
@@ -59,20 +200,20 @@ force_close_steam() {
 start_steam() {
     info "Starting Steam..."
     nohup steam >/dev/null 2>&1 &
-    ok "Steam launched."
+    ok "Steam launched"
 }
 
-# ---------- Steam compatibility checks ----------
+# ---------- Steam compatibility ----------
 detect_steam_type() {
-    if flatpak list | grep -q "com.valvesoftware.Steam" 2>/dev/null; then
-        echo "flatpak"
-    elif snap list 2>/dev/null | grep -q "^steam "; then
-        echo "snap"
+    local steam_type="unknown"
+    if command -v flatpak >/dev/null && flatpak list 2>/dev/null | grep -q "com.valvesoftware.Steam"; then
+        steam_type="flatpak"
+    elif command -v snap >/dev/null && snap list 2>/dev/null | grep -q "^steam "; then
+        steam_type="snap"
     elif command -v steam >/dev/null && [[ -f /usr/bin/steam ]]; then
-        echo "native"
-    else
-        echo "unknown"
+        steam_type="native"
     fi
+    echo "$steam_type"
 }
 
 get_distro() {
@@ -135,14 +276,14 @@ check_steam_compatibility() {
             ok "Native Steam detected. OK."
             ;;
         *)
-            warn "Could not determine Steam type. Assuming native, but be careful."
+            warn "Could not determine Steam type. Assuming native, be careful."
             ;;
     esac
 }
 
 check_decky_loader() {
-    if [[ -d "$HOME/.local/share/decky" ]] || [[ -f "$HOME/.steam/steam/plugins/decky-loader" ]] || systemctl --user list-units 2>/dev/null | grep -q decky; then
-        warn "Decky Loader detected! It may conflict with Millennium."
+    if [[ -d "$HOME/.local/share/decky" ]] || [[ -f "$HOME/.steam/steam/plugins/decky-loader" ]] || ( command -v systemctl >/dev/null && systemctl --user list-units 2>/dev/null | grep -q decky ); then
+        warn "Decky Loader detected! May conflict with Millennium."
         echo -e "${YELLOW}Options:${NC}"
         echo "  1) Uninstall Decky Loader (recommended)"
         echo "  2) Continue anyway (risky)"
@@ -153,7 +294,7 @@ check_decky_loader() {
             1)
                 info "Uninstalling Decky Loader..."
                 curl -fsSL https://github.com/SteamDeckHomebrew/decky-loader/raw/main/uninstall.sh | bash || warn "Uninstall failed."
-                ok "Decky Loader removed."
+                ok "Decky Loader removed"
                 ;;
             *)
                 warn "Continuing with Decky Loader present. Expect issues."
@@ -162,17 +303,45 @@ check_decky_loader() {
     fi
 }
 
-# ---------- Millennium detection (hybrid command + version extraction) ----------
+# ---------- Millennium detection ----------
 is_millennium_installed() {
-    local result
-    result=$(sh -c 'pacman -Qs millennium 2>/dev/null || dpkg -l | grep millennium 2>/dev/null || rpm -qa | grep millennium 2>/dev/null || flatpak list | grep -i millennium 2>/dev/null || grep -i "version" ~/.local/share/millennium/bootstrap.log 2>/dev/null')
+    local result=""
+    if command -v pacman >/dev/null; then
+        result=$(pacman -Qs millennium 2>/dev/null)
+    fi
+    if [[ -z "$result" ]] && command -v dpkg >/dev/null; then
+        result=$(dpkg -l | grep millennium 2>/dev/null)
+    fi
+    if [[ -z "$result" ]] && command -v rpm >/dev/null; then
+        result=$(rpm -qa | grep millennium 2>/dev/null)
+    fi
+    if [[ -z "$result" ]] && command -v flatpak >/dev/null; then
+        result=$(flatpak list | grep -i millennium 2>/dev/null)
+    fi
+    if [[ -z "$result" ]] && [[ -f "$HOME/.local/share/millennium/bootstrap.log" ]]; then
+        result=$(grep -i "version" "$HOME/.local/share/millennium/bootstrap.log" 2>/dev/null)
+    fi
     [[ -n "$result" ]] && return 0
     [[ -f "/usr/lib/millennium/libmillennium.so" ]] || [[ -f "/usr/bin/steam.millennium.bak" ]]
 }
 
 get_millennium_version() {
-    local result
-    result=$(sh -c 'pacman -Qs millennium 2>/dev/null || dpkg -l | grep millennium 2>/dev/null || rpm -qa | grep millennium 2>/dev/null || flatpak list | grep -i millennium 2>/dev/null || grep -i "version" ~/.local/share/millennium/bootstrap.log 2>/dev/null')
+    local result=""
+    if command -v pacman >/dev/null; then
+        result=$(pacman -Qs millennium 2>/dev/null)
+    fi
+    if [[ -z "$result" ]] && command -v dpkg >/dev/null; then
+        result=$(dpkg -l | grep millennium 2>/dev/null)
+    fi
+    if [[ -z "$result" ]] && command -v rpm >/dev/null; then
+        result=$(rpm -qa | grep millennium 2>/dev/null)
+    fi
+    if [[ -z "$result" ]] && command -v flatpak >/dev/null; then
+        result=$(flatpak list | grep -i millennium 2>/dev/null)
+    fi
+    if [[ -z "$result" ]] && [[ -f "$HOME/.local/share/millennium/bootstrap.log" ]]; then
+        result=$(grep -i "version" "$HOME/.local/share/millennium/bootstrap.log" 2>/dev/null)
+    fi
     if [[ -n "$result" ]]; then
         local ver=""
         if [[ "$result" =~ [v]?([0-9]+\.[0-9]+\.[0-9]+) ]]; then
@@ -194,12 +363,10 @@ get_millennium_version() {
     fi
 }
 
-# ---------- Accela detection (improved for ACCELA.AppImage) ----------
+# ---------- Accela detection ----------
 is_accela_installed() {
     local accela_dir="$HOME/.local/share/ACCELA"
-    if [[ ! -d "$accela_dir" ]]; then
-        return 1
-    fi
+    [[ -d "$accela_dir" ]] || return 1
     if [[ -f "$accela_dir/run.sh" && -x "$accela_dir/run.sh" ]]; then
         return 0
     fi
@@ -218,10 +385,7 @@ is_accela_installed() {
 
 detect_accela_type() {
     local accela_dir="$HOME/.local/share/ACCELA"
-    if [[ ! -d "$accela_dir" ]]; then
-        echo "none"
-        return
-    fi
+    [[ -d "$accela_dir" ]] || { echo "none"; return; }
     if [[ -f "$accela_dir/run.sh" && -x "$accela_dir/run.sh" ]]; then
         echo "run.sh"
         return
@@ -231,11 +395,9 @@ detect_accela_type() {
         return
     fi
     while IFS= read -r file; do
-        if [[ -f "$file" && -x "$file" ]]; then
-            if file "$file" 2>/dev/null | grep -q "ELF.*executable"; then
-                echo "appimage"
-                return
-            fi
+        if [[ -f "$file" && -x "$file" ]] && file "$file" 2>/dev/null | grep -q "ELF.*executable"; then
+            echo "appimage"
+            return
         fi
     done < <(find "$accela_dir" -maxdepth 1 -type f -executable 2>/dev/null)
     echo "unknown"
@@ -243,10 +405,7 @@ detect_accela_type() {
 
 get_accela_filename() {
     local accela_dir="$HOME/.local/share/ACCELA"
-    if [[ ! -d "$accela_dir" ]]; then
-        echo ""
-        return
-    fi
+    [[ -d "$accela_dir" ]] || { echo ""; return; }
     if [[ -f "$accela_dir/run.sh" && -x "$accela_dir/run.sh" ]]; then
         echo "run.sh"
         return
@@ -273,7 +432,6 @@ clean_plugin_dir() {
     )
     for path in "${plugin_paths[@]}"; do
         if [[ -d "$path" ]]; then
-            info "Removing old plugin directory: $path"
             rm -rf "$path"
         fi
     done
@@ -282,13 +440,12 @@ clean_plugin_dir() {
 # ---------- Dependency fix ----------
 run_fix_deps() {
     info "Running dependency fix script (fix-deps)..."
-    curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/fix-deps | bash || warn "fix-deps failed, but continuing..."
+    curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/fix-deps | bash || warn "fix-deps failed, continuing..."
 }
 
-# ---------- Install Python requirements for LuaTools ----------
+# ---------- Python requirements ----------
 install_python_requirements() {
     info "Installing Python requirements (httpx, beautifulsoup4, ruamel.yaml)..."
-
     local venv_paths=(
         "$HOME/.local/share/millennium/plugins/LuaToolsLinux/.venv"
         "$HOME/.steam/steam/millennium/plugins/LuaToolsLinux/.venv"
@@ -302,21 +459,19 @@ install_python_requirements() {
             break
         fi
     done
-
     if [[ -z "$pip_cmd" ]]; then
-        warn "No virtual environment found for LuaTools plugin. Trying system pip (user install)."
+        warn "No virtual environment found. Trying system pip (user install)."
         if command -v pip3 >/dev/null; then
             pip_cmd="pip3 install --user"
         elif command -v pip >/dev/null; then
             pip_cmd="pip install --user"
         else
-            warn "pip not found. Skipping Python requirements installation."
+            warn "pip not found. Skipping Python requirements."
             return
         fi
     else
         pip_cmd="$pip_cmd install"
     fi
-
     local packages=("httpx==0.27.2" "beautifulsoup4" "ruamel.yaml==0.18.6")
     for pkg in "${packages[@]}"; do
         info "Installing $pkg ..."
@@ -326,185 +481,94 @@ install_python_requirements() {
             warn "Failed to install $pkg"
         fi
     done
-    ok "Python requirements installation completed."
+    ok "Python requirements done."
 }
 
-# ---------- Additional Ubuntu/Debian libssl-dev:i386 prompt ----------
+# ---------- Ubuntu/Debian libssl check ----------
 check_libssl_dev() {
     local family=$(get_distro_family)
-    if [[ "$family" != "debian" ]]; then
-        return
-    fi
+    [[ "$family" != "debian" ]] && return
     if dpkg -s libssl-dev:i386 2>/dev/null | grep -q '^Status:.*installed'; then
-        ok "libssl-dev:i386 is already installed."
+        ok "libssl-dev:i386 already installed."
         return
     fi
-    warn "libssl-dev:i386 (32-bit development libraries) is missing."
-    echo "This library is required for 32-bit compatibility with some components."
+    warn "libssl-dev:i386 (32-bit dev libs) is missing."
     local response=""
-    printf "Do you want to install libssl-dev:i386 now? [y/N]: " > /dev/tty
+    printf "Install libssl-dev:i386 now? [y/N]: " > /dev/tty
     read -r response < /dev/tty
     if [[ "$response" =~ ^[Yy]$ ]]; then
-        info "Enabling i386 architecture and installing libssl-dev:i386..."
         sudo dpkg --add-architecture i386 || true
         sudo apt update || true
-        sudo apt install -y libssl-dev:i386 || warn "Installation failed. You may need to run 'sudo apt install -f' manually."
-        if dpkg -s libssl-dev:i386 2>/dev/null | grep -q '^Status:.*installed'; then
-            ok "libssl-dev:i386 installed successfully."
-        else
-            warn "libssl-dev:i386 could not be installed. Some features may not work."
-        fi
+        sudo apt install -y libssl-dev:i386 || warn "Installation failed."
     else
-        info "Skipping libssl-dev:i386 installation."
+        info "Skipping libssl-dev:i386."
     fi
 }
 
 # ---------- Installers ----------
 install_millennium_beta() {
-    info "Installing Millennium (beta via steambrew.app)..."
+    info "Installing Millennium beta via steambrew.app..."
     curl -fsSL "https://steambrew.app/install.sh" | bash -s -- --beta || fail "Millennium beta installation failed."
-    ok "Millennium beta installed."
-}
-
-install_plugin_for_version() {
-    local version="$1"
-    local plugin_url="$LUATOOLS_MILLENNIUM_URL"
-    if [[ -n "$version" ]]; then
-        local major_minor=$(echo "$version" | cut -d. -f1-2)
-        if [[ "$(echo "$major_minor < 2.36" | bc -l 2>/dev/null)" == "1" ]]; then
-            plugin_url="$LUATOOLS_LEGACY_URL"
-            warn "Millennium version $version (< 2.36). Using legacy plugin."
-        fi
-    fi
-    info "Installing LuaTools plugin for Millennium version ${version:-beta}"
-    clean_plugin_dir
-    run_remote_script "$plugin_url"
-    install_python_requirements
-    ok "Plugin installed."
+    ok "Millennium beta installed"
 }
 
 install_accela_and_slssteam() {
     info "Installing accela and slssteam via enter-the-wired..."
     curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/enter-the-wired | bash || warn "Accela installation failed."
-    ok "Accela and slssteam installation completed."
+    ok "Accela and slssteam installed"
 }
 
-# ---------- Option 1: Install All (forces Millennium reinstall) ----------
+# ---------- Option 1: Install All ----------
 install_all() {
     info "Starting FULL installation (Millennium + plugin + accela & slssteam)..."
     run_fix_deps
     force_close_steam
-
     install_millennium_beta
-    local new_version=$(get_millennium_version)
-    install_plugin_for_version "$new_version"
-
+    install_plugin_from_release
+    install_python_requirements
     install_accela_and_slssteam
     start_steam
+    show_status
+    show_post_install_instructions
     ok "Full installation complete. Steam has been started."
 }
 
-# ---------- Option 2: Only Millennium + plugin (reinstall plugin if Millennium exists) ----------
+# ---------- Option 2: Only plugin (reinstall) ----------
 install_millennium_flow() {
     run_fix_deps
     force_close_steam
-
     if is_millennium_installed; then
         local current_version=$(get_millennium_version)
         ok "Millennium already installed. Version: ${current_version:-unknown}"
-        echo ""
-        local response=""
-        printf "Reinstall/update LuaTools plugin? [y/N]: " > /dev/tty
-        read -r response < /dev/tty
-        if [[ "$response" =~ ^[Yy]$ ]]; then
-            install_plugin_for_version "$current_version"
-        else
-            info "No action taken."
-        fi
     else
-        info "Millennium not installed. Installing Millennium beta + latest plugin..."
+        info "Millennium not installed. Installing Millennium beta first..."
         install_millennium_beta
-        local new_version=$(get_millennium_version)
-        install_plugin_for_version "$new_version"
     fi
+    install_plugin_from_release
+    install_python_requirements
     start_steam
+    show_status
+    # Only show accela instructions if accela is present
+    if is_accela_installed; then
+        show_post_install_instructions
+    fi
+    ok "Plugin installation complete. Steam has been started."
 }
 
-fix_remove_piracy_blocks() {
-    local theme_css_dir="$HOME/.steam/steam/millennium/themes/Steam/src/css"
-    local files_to_fix=(
-        "libraryroot.custom.css"
-        "overlay.custom.css"
-        "regular.css"
-        "startupLogin.custom.css"
-        "webkit.css"
-        "steam/gamepage.css"
-    )
-
-    echo ""
-    if [[ ! -d "$theme_css_dir" ]]; then
-        warn "Theme CSS directory not found: $theme_css_dir"
-        warn "Make sure Millennium and the theme are installed correctly."
-        return 1
-    fi
-    ok "Directory found: $theme_css_dir"
-
-    local any_fixed=false
-
-    for filename in "${files_to_fix[@]}"; do
-        local filepath="$theme_css_dir/$filename"
-        if [[ ! -f "$filepath" ]]; then
-            echo "$filename -> NOT FOUND, skipping"
-            continue
-        fi
-
-        echo -n "$filename ... "
-
-        # Backup
-        cp "$filepath" "$filepath.bak"
-
-        # Remover linhas com a mensagem
-        sed -i '/Pls remove any piracy plugin/d' "$filepath"
-
-        # Remover linhas com seletores de luatools
-        sed -i '/\[class\*="luatools"/d' "$filepath"
-        sed -i '/\[data-millennium-plugin\*="luatools"/d' "$filepath"
-
-        # Remover linhas com seletores de manilua
-        sed -i '/\[class\*="manilua"/d' "$filepath"
-        sed -i '/\[data-millennium-plugin\*="manilua"/d' "$filepath"
-
-        # Remover linhas com seletores de lumea
-        sed -i '/\[class\*="lumea"/d' "$filepath"
-        sed -i '/\[data-millennium-plugin\*="lumea"/d' "$filepath"
-
-        # Remover linhas vazias
-        sed -i '/^[[:space:]]*$/d' "$filepath"
-
-        # Verificar se houve mudança
-        if ! cmp -s "$filepath" "$filepath.bak"; then
-            echo "✔ Removed"
-            any_fixed=true
-        else
-            rm -f "$filepath.bak"
-            echo "○ No block found"
-        fi
-    done
-
-    echo ""
-    if $any_fixed; then
-        ok "Anti-piracy blocks removed. Restart Steam for changes to take effect."
-        info "You can restart Steam with: pkill -9 steam; nohup steam >/dev/null 2>&1 &"
-    else
-        warn "No changes made. The theme may already be clean."
-    fi
+# ---------- Option 3: Only accela ----------
+install_accela_only() {
+    info "Installing accela and slssteam only..."
+    install_accela_and_slssteam
+    show_status
+    show_post_install_instructions
+    ok "Accela installation completed."
 }
 
 # ---------- Fixes menu ----------
 fix_purchase_error() {
     info "Fixing 'Purchase error' by running headcrab script..."
     curl -fsSL "https://raw.githubusercontent.com/Deadboy666/h3adcr-b/refs/heads/main/headcrab.sh" | bash || warn "Headcrab script failed."
-    ok "Purchase error fix attempted. You may need to restart Steam."
+    ok "Purchase error fix attempted."
 }
 
 fix_missing_keys() {
@@ -514,7 +578,7 @@ fix_missing_keys() {
     if [[ ! -d "$HOME/enter-the-wired" ]]; then
         info "Cloning enter-the-wired repository..."
         git clone "$ENTERTHEWIRED_REPO" "$HOME/enter-the-wired" || {
-            warn "Git clone failed. Trying to download via curl..."
+            warn "Git clone failed. Trying curl..."
             mkdir -p "$HOME/enter-the-wired"
             curl -fsSL "https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/slssteam" -o "$HOME/enter-the-wired/slssteam"
             chmod +x "$HOME/enter-the-wired/slssteam"
@@ -523,7 +587,7 @@ fix_missing_keys() {
     if [[ -x "$HOME/enter-the-wired/slssteam" ]]; then
         ~/enter-the-wired/slssteam
     else
-        warn "~/enter-the-wired/slssteam not found or not executable."
+        warn "slssteam not found."
     fi
     ok "Missing Keys fix attempted."
 }
@@ -541,6 +605,56 @@ fix_no_licenses_info() {
     echo "  - In the accela menu, enable the option: 'Limit downloads to Steam Library'."
     echo ""
     read -p "Press Enter to continue..." < /dev/tty
+}
+
+fix_remove_piracy_blocks() {
+    local theme_css_dir="$HOME/.steam/steam/millennium/themes/Steam/src/css"
+    local files_to_fix=(
+        "libraryroot.custom.css"
+        "overlay.custom.css"
+        "regular.css"
+        "startupLogin.custom.css"
+        "webkit.css"
+        "steam/gamepage.css"
+    )
+    echo ""
+    if [[ ! -d "$theme_css_dir" ]]; then
+        warn "Theme CSS directory not found: $theme_css_dir"
+        warn "Make sure Millennium and the theme are installed."
+        return 1
+    fi
+    ok "Directory found: $theme_css_dir"
+    local any_fixed=false
+    for filename in "${files_to_fix[@]}"; do
+        local filepath="$theme_css_dir/$filename"
+        if [[ ! -f "$filepath" ]]; then
+            echo "$filename -> NOT FOUND, skipping"
+            continue
+        fi
+        echo -n "$filename ... "
+        cp "$filepath" "$filepath.bak"
+        sed -i '/Pls remove any piracy plugin/d' "$filepath"
+        sed -i '/\[class\*="luatools"/d' "$filepath"
+        sed -i '/\[data-millennium-plugin\*="luatools"/d' "$filepath"
+        sed -i '/\[class\*="manilua"/d' "$filepath"
+        sed -i '/\[data-millennium-plugin\*="manilua"/d' "$filepath"
+        sed -i '/\[class\*="lumea"/d' "$filepath"
+        sed -i '/\[data-millennium-plugin\*="lumea"/d' "$filepath"
+        sed -i '/^[[:space:]]*$/d' "$filepath"
+        if ! cmp -s "$filepath" "$filepath.bak"; then
+            echo "✔ Removed"
+            any_fixed=true
+        else
+            rm -f "$filepath.bak"
+            echo "○ No block found"
+        fi
+    done
+    echo ""
+    if $any_fixed; then
+        ok "Anti-piracy blocks removed. Restart Steam for changes."
+    else
+        warn "No changes made."
+    fi
 }
 
 fix_menu() {
@@ -568,32 +682,21 @@ fix_menu() {
     done
 }
 
-# ---------- Uninstall (includes accela/slssteam removal) ----------
+# ---------- Uninstall ----------
 uninstall_all_flow() {
     info "Uninstalling everything (Millennium, plugin, accela, slssteam)..."
-
-    # 1. Remove Millennium
-    info "Removing Millennium Framework files..."
     sudo rm -rf /usr/lib/millennium /usr/share/millennium \
                 "${XDG_CONFIG_HOME:-$HOME/.config}/millennium" \
                 "${XDG_DATA_HOME:-$HOME/.local/share}/millennium"
     if [ -f "/usr/bin/steam.millennium.bak" ]; then
-        info "Restoring original Steam executable..."
         sudo mv /usr/bin/steam.millennium.bak /usr/bin/steam
     fi
     rm -f "${HOME}/.steam/steam/ubuntu12_32/libXtst.so.6"
-
-    # 2. Remove LuaTools plugin directories
-    info "Removing LuaTools plugin remnants..."
     rm -rf "${XDG_DATA_HOME:-$HOME/.local/share}/luatools" \
            "${XDG_CONFIG_HOME:-$HOME/.config}/luatools" \
            "${HOME}/.luatools" 2>/dev/null || true
     clean_plugin_dir
-
-    # 3. Uninstall accela and slssteam using the official uninstall script
-    info "Uninstalling accela and slssteam via enter-the-wired uninstaller..."
     curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/uninstall | bash || warn "Accela/slssteam uninstall may have failed."
-
     ok "Full uninstall completed."
 }
 
@@ -602,10 +705,10 @@ interactive_menu() {
     while true; do
         echo ""
         echo -e "${BOLD}LuaTools Installer${NC}"
-        echo "1) Install All Millennium + plugin + accela & slssteam"
-        echo "2) Install/Reinstall Millennium + LuaTools plugin"
+        echo "1) Install All (Millennium + plugin + accela & slssteam)"
+        echo "2) Install/Reinstall LuaTools plugin only (keeps Millennium)"
         echo "3) Install accela and slssteam only"
-        echo "4) Uninstall Everything (Millennium + plugin + accela + slssteam)"
+        echo "4) Uninstall Everything"
         echo "5) Fix common issues"
         echo "6) Cancel"
         echo ""
@@ -614,7 +717,7 @@ interactive_menu() {
         case "$choice" in
             1) install_all ; break ;;
             2) install_millennium_flow ; break ;;
-            3) install_accela_and_slssteam ; break ;;
+            3) install_accela_only ; break ;;
             4) uninstall_all_flow ; break ;;
             5) fix_menu ;;
             6) info "Cancelled." ; exit 0 ;;
@@ -631,46 +734,21 @@ main() {
             set -x
         fi
     done
-
     require_cmd curl
     require_cmd bash
     if ! command -v git >/dev/null; then
         warn "git not installed. Some fix functions may fail."
     fi
-
     check_internet
     check_architecture
     check_steam_compatibility
     check_decky_loader
-
-    echo ""
-    if is_millennium_installed; then
-        local mver=$(get_millennium_version)
-        ok "Millennium: installed (version ${mver:-unknown})"
-    else
-        warn "Millennium: NOT installed"
-    fi
-
-    if is_accela_installed; then
-        local atype=$(detect_accela_type)
-        local fname=$(get_accela_filename)
-        if [[ "$atype" == "appimage" ]]; then
-            warn "Accela: installed as AppImage (file: $fname). You may need to manually set the path in LuaTools menu (point to ~/.local/share/ACCELA/$fname)."
-        elif [[ "$atype" == "run.sh" ]]; then
-            ok "Accela: installed as run.sh script."
-        else
-            ok "Accela: installed (type unknown)"
-        fi
-    else
-        warn "Accela: NOT installed"
-    fi
-
+    show_status
     check_libssl_dev
-
     case "${1:-}" in
         1|--install-all)       install_all ;;
         2|--millennium)        install_millennium_flow ;;
-        3|--accela)            install_accela_and_slssteam ;;
+        3|--accela)            install_accela_only ;;
         4|--uninstall)         uninstall_all_flow ;;
         5|--fix)               fix_menu ;;
         --cancel)              info "Cancelled." ; exit 0 ;;
@@ -680,15 +758,13 @@ Usage: install.sh [option] [--debug]
 
 Options:
     1, --install-all     Install all (Millennium + plugin + accela & slssteam)
-    2, --millennium      Install/Reinstall Millennium + LuaTools plugin
+    2, --millennium      Install/Reinstall LuaTools plugin only (keeps Millennium)
     3, --accela          Install accela and slssteam only
-    4, --uninstall       Uninstall everything (Millennium + plugin + accela + slssteam)
-    5, --fix             Open the common issues fix menu
-    --cancel             Exit without installing
+    4, --uninstall       Uninstall everything
+    5, --fix             Open fixes menu
+    --cancel             Exit
     --debug              Enable debug output
     -h, --help           Show this help
-
-If no option is given, an interactive menu is shown after status report.
 EOF
             exit 0
             ;;
@@ -701,7 +777,6 @@ EOF
             exit 1
             ;;
     esac
-
     echo ""
     read -p "Press Enter to close this terminal..." < /dev/tty
 }
