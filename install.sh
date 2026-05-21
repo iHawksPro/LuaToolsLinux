@@ -659,18 +659,92 @@ fix_remove_piracy_blocks() {
     fi
 }
 
+# ========== New function: Clean Steam reinstall ==========
+fix_reinstall_steam_clean() {
+    echo ""
+    echo -e "${BOLD}${RED}⚠️  WARNING: COMPLETE STEAM REINSTALL ⚠️${NC}"
+    echo -e "${YELLOW}This will REMOVE ALL DOWNLOADED GAMES, configurations,"
+    echo -e "Proton prefixes and any other Steam-related data (except saves"
+    echo -e "that live outside Steam's folder, like Stardew Valley in ~/.config/StardewValley).${NC}"
+    echo ""
+    echo -e "${BOLD}To keep your downloaded games, BACKUP the following folder BEFORE proceeding:${NC}"
+    echo -e "  ${GREEN}~/.local/share/Steam/steamapps/${NC}  or  ${GREEN}~/.steam/steam/steamapps/${NC}"
+    echo ""
+    echo -e "${BOLD}Backup example:${NC}"
+    echo "  cp -r ~/.local/share/Steam/steamapps ~/backup_steamapps"
+    echo ""
+    echo -e "${RED}Have you backed up your games?${NC}"
+    printf "Type [y/N]: " > /dev/tty
+    local backup_ok; read -r backup_ok < /dev/tty
+    if [[ ! "$backup_ok" =~ ^[Yy]$ ]]; then
+        warn "Operation cancelled. Please backup and run again."
+        return
+    fi
+
+    echo ""
+    echo -e "${YELLOW}Continuing... Closing Steam if running.${NC}"
+    force_close_steam
+
+    info "Removing Steam package..."
+    if command -v pacman >/dev/null; then
+        sudo pacman -Rdd steam --noconfirm 2>/dev/null || warn "Steam package not installed?"
+    elif command -v apt >/dev/null; then
+        sudo apt remove --purge steam -y
+    elif command -v dnf >/dev/null; then
+        sudo dnf remove steam -y
+    else
+        warn "Package manager not recognized. Please remove Steam manually."
+    fi
+
+    info "Removing Steam config and data folders..."
+    rm -rf ~/.steam ~/.local/share/Steam ~/.var/app/com.valvesoftware.Steam ~/.steampath ~/.steampid
+    sudo rm -rf /usr/lib/steam /usr/share/steam 2>/dev/null || true
+
+    info "Cleaning icon cache and shortcuts..."
+    rm -f ~/.local/share/applications/steam*.desktop
+    sudo update-desktop-database 2>/dev/null || true
+
+    ok "Steam completely removed from system."
+
+    echo ""
+    echo -e "${BOLD}Do you want to reinstall Steam now?${NC}"
+    printf "[y/N]: " > /dev/tty
+    local reinstall_choice; read -r reinstall_choice < /dev/tty
+    if [[ "$reinstall_choice" =~ ^[Yy]$ ]]; then
+        info "Reinstalling Steam..."
+        if command -v pacman >/dev/null; then
+            sudo pacman -S steam --noconfirm
+        elif command -v apt >/dev/null; then
+            sudo apt install steam -y
+        elif command -v dnf >/dev/null; then
+            sudo dnf install steam -y
+        else
+            echo "Please install Steam manually."
+        fi
+        ok "Steam reinstalled."
+        echo -e "${CYAN}To restore your games, copy the 'steamapps' folder back to ~/.local/share/Steam/ before launching Steam.${NC}"
+    else
+        info "You can reinstall Steam later with: sudo pacman -S steam"
+    fi
+
+    echo ""
+    read -p "Press Enter to return to menu..." < /dev/tty
+}
+
+# ========== Modified fixes menu ==========
 fix_menu() {
     while true; do
         echo ""
         echo -e "${BOLD}Common Issues Fixes${NC}"
-        echo "1) Purchase error (headcrab)"
+        echo "1) Purchase error or issues with slssteam (headcrab)"
         echo "2) Missing Keys"
         echo "3) No licenses (information)"
         echo "4) Run fix-deps (install system dependencies)"
         echo "5) Remove anti-piracy blocks from Steam theme CSS"
-        echo "6) Back to main menu"
+        echo "6) Reinstall Steam completely (clean) - CAN DELETE GAMES, MAKE A BACKUP!"
+        echo "7) Back to main menu"
         echo ""
-        printf "Choose an option [1-6]: " > /dev/tty
+        printf "Choose an option [1-7]: " > /dev/tty
         local choice; read -r choice < /dev/tty
         case "$choice" in
             1) fix_purchase_error ;;
@@ -678,7 +752,8 @@ fix_menu() {
             3) fix_no_licenses_info ;;
             4) run_fix_deps ;;
             5) fix_remove_piracy_blocks ;;
-            6) break ;;
+            6) fix_reinstall_steam_clean ;;
+            7) break ;;
             *) warn "Invalid option." ;;
         esac
     done
