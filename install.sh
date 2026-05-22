@@ -566,7 +566,58 @@ install_accela_only() {
     ok "Accela installation completed."
 }
 
-# ---------- Fixes menu ----------
+# ---------- Informational fixes ----------
+fix_missing_game_executable() {
+    echo ""
+    echo -e "${BOLD}${CYAN}Error: 'Missing game executable' or 'Fail on compatibility tool'${NC}"
+    echo -e "${YELLOW}Troubleshooting steps:${NC}"
+    echo ""
+    echo "1) Right-click on the game in your Steam library."
+    echo "2) Go to Properties → Compatibility."
+    echo "3) Check the box 'Force the use of a specific Steam Play compatibility tool'."
+    echo "4) For Linux native games: select 'Steam Linux Runtime' or 'Legacy Runtime'."
+    echo "5) For Windows games: select a Proton version."
+    echo "   - Check ProtonDB (https://www.protondb.com) for the best Proton version for your game."
+    echo "   - 'Proton Experimental' often works well for many games."
+    echo "6) Launch the game again."
+    echo ""
+    read -p "Press Enter to continue..." < /dev/tty
+}
+
+fix_content_still_encrypted() {
+    echo ""
+    echo -e "${BOLD}${CYAN}Error: 'Content Still Encrypted'${NC}"
+    echo -e "${YELLOW}Troubleshooting steps:${NC}"
+    echo ""
+    echo "1) Right-click on the game in your Steam library."
+    echo "2) Go to Properties → Compatibility."
+    echo "3) Check the box 'Force the use of a specific Steam Play compatibility tool'."
+    echo "4) For Linux native games: select 'Steam Linux Runtime' or 'Legacy Runtime'."
+    echo "5) For Windows games: select a Proton version (check ProtonDB for best choice or use Experimental)."
+    echo "6) Still in Properties, go to 'Installed Files'."
+    echo "7) Click 'Verify integrity of game files'."
+    echo "8) Wait for verification to complete, then launch the game."
+    echo ""
+    read -p "Press Enter to continue..." < /dev/tty
+}
+
+fix_online_fix_not_working() {
+    echo ""
+    echo -e "${BOLD}${CYAN}Error: Online Fix doesn't work${NC}"
+    echo -e "${YELLOW}Troubleshooting steps:${NC}"
+    echo ""
+    echo "1) Apply the online fix files to the game installation folder."
+    echo "2) In Steam, right-click on the game → Properties."
+    echo "3) In 'Launch Options', paste the following:"
+    echo ""
+    echo -e "${GREEN}WINEDLLOVERRIDES=\"OnlineFix64=n;SteamOverlay64=n;winmm=n,b;dnet=n;steam_api64=n;winhttp=n,b\" %command%${NC}"
+    echo ""
+    echo "4) Close Properties and launch the game."
+    echo ""
+    read -p "Press Enter to continue..." < /dev/tty
+}
+
+# ---------- Existing fixes ----------
 fix_purchase_error() {
     info "Fixing 'Purchase error' by running headcrab script..."
     curl -fsSL "https://raw.githubusercontent.com/Deadboy666/h3adcr-b/refs/heads/main/headcrab.sh" | bash || warn "Headcrab script failed."
@@ -659,7 +710,6 @@ fix_remove_piracy_blocks() {
     fi
 }
 
-# ========== New function: Clean Steam reinstall ==========
 fix_reinstall_steam_clean() {
     echo ""
     echo -e "${BOLD}${RED}⚠️  WARNING: COMPLETE STEAM REINSTALL ⚠️${NC}"
@@ -731,20 +781,23 @@ fix_reinstall_steam_clean() {
     read -p "Press Enter to return to menu..." < /dev/tty
 }
 
-# ========== Modified fixes menu ==========
+# ---------- Updated fixes menu ----------
 fix_menu() {
     while true; do
         echo ""
         echo -e "${BOLD}Common Issues Fixes${NC}"
-        echo "1) Purchase error or issues with slssteam (headcrab)"
+        echo "1) Purchase error or slssteam issues (headcrab)"
         echo "2) Missing Keys"
         echo "3) No licenses (information)"
         echo "4) Run fix-deps (install system dependencies)"
         echo "5) Remove anti-piracy blocks from Steam theme CSS"
-        echo "6) Reinstall Steam completely (clean) - CAN DELETE GAMES, MAKE A BACKUP!"
-        echo "7) Back to main menu"
+        echo "6) Reinstall Steam completely (clean) - WILL DELETE GAMES!"
+        echo "7) Missing game executable / Fail on compatibility tool (info)"
+        echo "8) Content Still Encrypted (info)"
+        echo "9) Online Fix doesn't work (info)"
+        echo "10) Back to main menu"
         echo ""
-        printf "Choose an option [1-7]: " > /dev/tty
+        printf "Choose an option [1-10]: " > /dev/tty
         local choice; read -r choice < /dev/tty
         case "$choice" in
             1) fix_purchase_error ;;
@@ -753,7 +806,10 @@ fix_menu() {
             4) run_fix_deps ;;
             5) fix_remove_piracy_blocks ;;
             6) fix_reinstall_steam_clean ;;
-            7) break ;;
+            7) fix_missing_game_executable ;;
+            8) fix_content_still_encrypted ;;
+            9) fix_online_fix_not_working ;;
+            10) break ;;
             *) warn "Invalid option." ;;
         esac
     done
