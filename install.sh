@@ -4,6 +4,7 @@ set -euo pipefail
 SELF_REPO_BASE="https://raw.githubusercontent.com/Star123451/LuaToolsLinux/main"
 LUATOOLS_LEGACY_URL="$SELF_REPO_BASE/update_legacy.sh"
 ENTERTHEWIRED_REPO="https://github.com/ciscosweater/enter-the-wired.git"
+ACCELA_FIX_REPO="https://github.com/Cybercountry/ACCELA_FIX.git"
 
 # GitHub release settings for plugin zip
 REPO_OWNER="Star123451"
@@ -11,6 +12,9 @@ REPO_NAME="LuaToolsLinux"
 RELEASE_ASSET_NAME="ltsteamplugin.zip"
 GITHUB_API_URL="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest"
 PLUGIN_NAME="luatools"
+
+# Headcrab (SLSsteam replacement) URL
+HEADCRAB_URL="https://raw.githubusercontent.com/Deadboy666/h3adcr-b/main/headcrab.sh"
 
 CYAN='\033[0;36m'
 GREEN='\033[0;32m'
@@ -122,7 +126,59 @@ PY
     ok "Plugin installed (version ${latest_tag:-latest})"
 }
 
-# ---------- Show status (triagem) ----------
+# ---------- Python dependency check and installation (only for plugin) ----------
+check_python_dependencies() {
+    info "Checking Python dependencies (httpx, beautifulsoup4, ruamel.yaml)..."
+    if ! command -v python3 &>/dev/null; then
+        warn "python3 not found. Cannot check dependencies."
+        return 1
+    fi
+    if python3 -c "import httpx, bs4, ruamel.yaml" 2>/dev/null; then
+        ok "All Python dependencies are already satisfied."
+        return 0
+    fi
+    warn "Some Python dependencies are missing. Attempting to install them..."
+
+    local pip_cmd=""
+    if command -v pip3 &>/dev/null; then
+        pip_cmd="pip3"
+    elif command -v pip &>/dev/null; then
+        pip_cmd="pip"
+    else
+        warn "pip not found. Trying to install pip via ensurepip..."
+        python3 -m ensurepip --upgrade 2>/dev/null || {
+            warn "Could not install pip. Please install pip manually."
+            return 1
+        }
+        pip_cmd="python3 -m pip"
+    fi
+
+    local packages=("httpx==0.27.2" "beautifulsoup4" "ruamel.yaml==0.18.6")
+    for pkg in "${packages[@]}"; do
+        info "Installing $pkg ..."
+        if $pip_cmd install --user "$pkg" &>/dev/null; then
+            ok "Installed $pkg"
+        else
+            warn "Failed to install $pkg. Trying without --user..."
+            if $pip_cmd install "$pkg" &>/dev/null; then
+                ok "Installed $pkg (system-wide)"
+            else
+                warn "Could not install $pkg. Manual installation may be required."
+            fi
+        fi
+    done
+
+    if python3 -c "import httpx, bs4, ruamel.yaml" 2>/dev/null; then
+        ok "Python dependencies successfully installed."
+        return 0
+    else
+        warn "Python dependencies still missing. You may need to install them manually:"
+        echo "  pip install httpx beautifulsoup4 ruamel.yaml"
+        return 1
+    fi
+}
+
+# ---------- Show status ----------
 show_status() {
     echo ""
     if is_millennium_installed; then
@@ -146,7 +202,7 @@ show_status() {
     fi
 }
 
-# ---------- Post-install instructions (orange box) ----------
+# ---------- Post-install instructions ----------
 show_post_install_instructions() {
     if ! is_accela_installed; then
         return
@@ -445,47 +501,6 @@ run_fix_deps() {
     curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/fix-deps | bash || warn "fix-deps failed, continuing..."
 }
 
-# ---------- Python requirements ----------
-install_python_requirements() {
-    info "Installing Python requirements (httpx, beautifulsoup4, ruamel.yaml)..."
-    local venv_paths=(
-        "$HOME/.local/share/millennium/plugins/LuaToolsLinux/.venv"
-        "$HOME/.steam/steam/millennium/plugins/LuaToolsLinux/.venv"
-        "$HOME/.steam/steam/steamui/millennium/plugins/LuaToolsLinux/.venv"
-    )
-    local pip_cmd=""
-    for vp in "${venv_paths[@]}"; do
-        if [[ -f "$vp/bin/pip" ]]; then
-            pip_cmd="$vp/bin/pip"
-            info "Found virtual environment at $vp"
-            break
-        fi
-    done
-    if [[ -z "$pip_cmd" ]]; then
-        warn "No virtual environment found. Trying system pip (user install)."
-        if command -v pip3 >/dev/null; then
-            pip_cmd="pip3 install --user"
-        elif command -v pip >/dev/null; then
-            pip_cmd="pip install --user"
-        else
-            warn "pip not found. Skipping Python requirements."
-            return
-        fi
-    else
-        pip_cmd="$pip_cmd install"
-    fi
-    local packages=("httpx==0.27.2" "beautifulsoup4" "ruamel.yaml==0.18.6")
-    for pkg in "${packages[@]}"; do
-        info "Installing $pkg ..."
-        if $pip_cmd "$pkg" 2>/dev/null; then
-            ok "Installed $pkg"
-        else
-            warn "Failed to install $pkg"
-        fi
-    done
-    ok "Python requirements done."
-}
-
 # ---------- Ubuntu/Debian libssl check ----------
 check_libssl_dev() {
     local family=$(get_distro_family)
@@ -514,20 +529,78 @@ install_millennium_beta() {
     ok "Millennium beta installed"
 }
 
+install_millennium_legacy() {
+    info "Installing Millennium Legacy (old version) + LuaTools plugin..."
+    force_close_steam
+    curl -fsSL "https://github.com/SteamClientHomebrew/Millennium/raw/refs/heads/legacy/scripts/install.sh" | bash || fail "Millennium Legacy installation failed."
+    ok "Millennium Legacy installed"
+    install_plugin_from_release
+    check_python_dependencies
+    start_steam
+    info "Millennium Legacy + plugin installation completed. Steam started."
+}
+
 install_accela_and_slssteam() {
-    info "Installing accela and slssteam via enter-the-wired..."
+    info "Installing accela and slssteam via enter-the-wired (standard AppImage version)..."
     curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/enter-the-wired | bash || warn "Accela installation failed."
     ok "Accela and slssteam installed"
 }
 
-# ---------- Option 1: Install All ----------
+install_legacy_accela_and_sls() {
+    info "Installing Legacy Accela (source-based, run.sh) + SLSsteam (headcrab)..."
+    info "This combination fixes AppImage compatibility issues by using the Python source version."
+
+    if ! command -v git &>/dev/null; then
+        fail "git is required to clone the ACCELA_FIX repository. Please install git first."
+    fi
+    if ! command -v python3 &>/dev/null; then
+        fail "python3 is required for Legacy Accela installation."
+    fi
+
+    local accela_fix_dir="$HOME/ACCELA_FIX"
+    if [[ -d "$accela_fix_dir" ]]; then
+        warn "Directory $accela_fix_dir already exists. Removing it to get a fresh copy..."
+        rm -rf "$accela_fix_dir"
+    fi
+    info "Cloning ACCELA_FIX repository..."
+    if ! git clone "$ACCELA_FIX_REPO" "$accela_fix_dir"; then
+        fail "Failed to clone ACCELA_FIX repository."
+    fi
+    cd "$accela_fix_dir" || fail "Cannot enter $accela_fix_dir"
+    if [[ ! -f "RUN_ME" ]]; then
+        fail "RUN_ME script not found in repository."
+    fi
+    chmod +x RUN_ME
+    info "Running ACCELA_FIX installer (this will install Legacy Accela with run.sh)..."
+    if ! ./RUN_ME; then
+        warn "ACCELA_FIX installation may have failed. Check output above."
+        cd "$HOME" || true
+        return 1
+    fi
+    cd "$HOME" || true
+    ok "Legacy Accela (run.sh version) installed successfully."
+
+    info "Installing SLSsteam (headcrab) to provide Steam Linux Runtime patching..."
+    local tmp_headcrab
+    tmp_headcrab="$(mktemp -t headcrab.XXXX.sh)"
+    curl -fsSL "$HEADCRAB_URL" -o "$tmp_headcrab"
+    chmod +x "$tmp_headcrab"
+    bash "$tmp_headcrab"
+    rm -f "$tmp_headcrab"
+    ok "SLSsteam (headcrab) installed."
+
+    show_post_install_instructions
+    ok "Legacy Accela + SLSsteam installation completed."
+}
+
+# ---------- Option 1: Install All (beta + standard accela) ----------
 install_all() {
-    info "Starting FULL installation (Millennium + plugin + accela & slssteam)..."
+    info "Starting FULL installation (Millennium beta + plugin + accela standard)..."
     run_fix_deps
     force_close_steam
     install_millennium_beta
     install_plugin_from_release
-    install_python_requirements
+    check_python_dependencies
     install_accela_and_slssteam
     start_steam
     show_status
@@ -547,26 +620,38 @@ install_millennium_flow() {
         install_millennium_beta
     fi
     install_plugin_from_release
-    install_python_requirements
+    check_python_dependencies
     start_steam
     show_status
-    # Only show accela instructions if accela is present
     if is_accela_installed; then
         show_post_install_instructions
     fi
     ok "Plugin installation complete. Steam has been started."
 }
 
-# ---------- Option 3: Only accela ----------
+# ---------- Option 3: Millennium Legacy + plugin ----------
+install_millennium_legacy_flow() {
+    install_millennium_legacy
+}
+
+# ---------- Option 4: Only accela standard ----------
 install_accela_only() {
-    info "Installing accela and slssteam only..."
+    info "Installing accela and slssteam only (standard AppImage version)..."
     install_accela_and_slssteam
     show_status
     show_post_install_instructions
     ok "Accela installation completed."
 }
 
-# ---------- Informational fixes ----------
+# ---------- Option 5: Legacy Accela + SLSsteam ----------
+install_legacy_accela_and_sls_only() {
+    info "Installing Legacy Accela (source-based, run.sh) + SLSsteam only..."
+    install_legacy_accela_and_sls
+    show_status
+    ok "Legacy Accela + SLSsteam installation completed."
+}
+
+# ---------- Informational fixes (unchanged) ----------
 fix_missing_game_executable() {
     echo ""
     echo -e "${BOLD}${CYAN}Error: 'Missing game executable' or 'Fail on compatibility tool'${NC}"
@@ -617,10 +702,9 @@ fix_online_fix_not_working() {
     read -p "Press Enter to continue..." < /dev/tty
 }
 
-# ---------- Existing fixes ----------
 fix_purchase_error() {
     info "Fixing 'Purchase error' by running headcrab script..."
-    curl -fsSL "https://raw.githubusercontent.com/Deadboy666/h3adcr-b/refs/heads/main/headcrab.sh" | bash || warn "Headcrab script failed."
+    curl -fsSL "https://raw.githubusercontent.com/Deadboy666/h3adcr-b/main/headcrab.sh" | bash || warn "Headcrab script failed."
     ok "Purchase error fix attempted."
 }
 
@@ -781,7 +865,7 @@ fix_reinstall_steam_clean() {
     read -p "Press Enter to return to menu..." < /dev/tty
 }
 
-# ---------- Updated fixes menu ----------
+# ---------- Fixes menu ----------
 fix_menu() {
     while true; do
         echo ""
@@ -833,27 +917,31 @@ uninstall_all_flow() {
     ok "Full uninstall completed."
 }
 
-# ---------- Main menu ----------
+# ---------- Main menu (reorganized) ----------
 interactive_menu() {
     while true; do
         echo ""
         echo -e "${BOLD}LuaTools Installer${NC}"
-        echo "1) Install All (Millennium + plugin + accela & slssteam)"
+        echo "1) Install All (Millennium beta + plugin + accela standard)"
         echo "2) Install/Reinstall LuaTools plugin only (keeps Millennium)"
-        echo "3) Install accela and slssteam only"
-        echo "4) Uninstall Everything"
-        echo "5) Fix common issues"
-        echo "6) Cancel"
+        echo "3) Install Millennium Legacy + plugin (old version, fallback)"
+        echo "4) Install accela and slssteam only (standard - AppImage)"
+        echo "5) Install Legacy Accela run.sh + SLSsteam (Cybercountry-FIX)"
+        echo "6) Fix common issues"
+        echo "7) Uninstall Everything"
+        echo "8) Cancel"
         echo ""
-        printf "Choose an option [1-6]: " > /dev/tty
+        printf "Choose an option [1-8]: " > /dev/tty
         local choice; read -r choice < /dev/tty
         case "$choice" in
             1) install_all ; break ;;
             2) install_millennium_flow ; break ;;
-            3) install_accela_only ; break ;;
-            4) uninstall_all_flow ; break ;;
-            5) fix_menu ;;
-            6) info "Cancelled." ; exit 0 ;;
+            3) install_millennium_legacy_flow ; break ;;
+            4) install_accela_only ; break ;;
+            5) install_legacy_accela_and_sls_only ; break ;;
+            6) fix_menu ;;
+            7) uninstall_all_flow ; break ;;
+            8) info "Cancelled." ; exit 0 ;;
             *) warn "Invalid option." ;;
         esac
     done
@@ -881,23 +969,27 @@ main() {
     case "${1:-}" in
         1|--install-all)       install_all ;;
         2|--millennium)        install_millennium_flow ;;
-        3|--accela)            install_accela_only ;;
-        4|--uninstall)         uninstall_all_flow ;;
-        5|--fix)               fix_menu ;;
+        3|--legacy)            install_millennium_legacy_flow ;;
+        4|--accela)            install_accela_only ;;
+        5|--legacy-accela)     install_legacy_accela_and_sls_only ;;
+        6|--fix)               fix_menu ;;
+        7|--uninstall)         uninstall_all_flow ;;
         --cancel)              info "Cancelled." ; exit 0 ;;
         -h|--help)
             cat <<'EOF'
 Usage: install.sh [option] [--debug]
 
 Options:
-    1, --install-all     Install all (Millennium + plugin + accela & slssteam)
-    2, --millennium      Install/Reinstall LuaTools plugin only (keeps Millennium)
-    3, --accela          Install accela and slssteam only
-    4, --uninstall       Uninstall everything
-    5, --fix             Open fixes menu
-    --cancel             Exit
-    --debug              Enable debug output
-    -h, --help           Show this help
+    1, --install-all       Install all (Millennium beta + plugin + accela standard)
+    2, --millennium        Install/Reinstall LuaTools plugin only (keeps Millennium)
+    3, --legacy            Install Millennium Legacy + plugin (old version, fallback)
+    4, --accela            Install accela and slssteam only (standard - AppImage)
+    5, --legacy-accela     Install Legacy Accela (source-based, run.sh) + SLSsteam (FIX)
+    6, --fix               Open fixes menu
+    7, --uninstall         Uninstall everything
+    --cancel               Exit
+    --debug                Enable debug output
+    -h, --help             Show this help
 EOF
             exit 0
             ;;
