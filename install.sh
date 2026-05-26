@@ -4,7 +4,8 @@ set -euo pipefail
 SELF_REPO_BASE="https://raw.githubusercontent.com/Star123451/LuaToolsLinux/main"
 LUATOOLS_LEGACY_URL="$SELF_REPO_BASE/update_legacy.sh"
 ENTERTHEWIRED_REPO="https://github.com/ciscosweater/enter-the-wired.git"
-ACCELA_FIX_REPO="https://github.com/Cybercountry/ACCELA_FIX.git"
+# Legacy Accela repository (source-based, run.sh)
+LEGACY_ACCELA_REPO="https://raw.githubusercontent.com/aglairdev/enter-the-wired/main/enter-the-wired"
 
 # GitHub release settings for plugin zip
 REPO_OWNER="Star123451"
@@ -138,7 +139,7 @@ check_python_dependencies() {
         return 0
     fi
     warn "Some Python dependencies are missing. Attempting to install them..."
-
+    
     local pip_cmd=""
     if command -v pip3 &>/dev/null; then
         pip_cmd="pip3"
@@ -152,7 +153,7 @@ check_python_dependencies() {
         }
         pip_cmd="python3 -m pip"
     fi
-
+    
     local packages=("httpx==0.27.2" "beautifulsoup4" "ruamel.yaml==0.18.6")
     for pkg in "${packages[@]}"; do
         info "Installing $pkg ..."
@@ -167,7 +168,7 @@ check_python_dependencies() {
             fi
         fi
     done
-
+    
     if python3 -c "import httpx, bs4, ruamel.yaml" 2>/dev/null; then
         ok "Python dependencies successfully installed."
         return 0
@@ -548,49 +549,13 @@ install_accela_and_slssteam() {
 
 install_legacy_accela_and_sls() {
     info "Installing Legacy Accela (source-based, run.sh) + SLSsteam (headcrab)..."
-    info "This combination fixes AppImage compatibility issues by using the Python source version."
-
-    if ! command -v git &>/dev/null; then
-        fail "git is required to clone the ACCELA_FIX repository. Please install git first."
-    fi
-    if ! command -v python3 &>/dev/null; then
-        fail "python3 is required for Legacy Accela installation."
-    fi
-
-    local accela_fix_dir="$HOME/ACCELA_FIX"
-    if [[ -d "$accela_fix_dir" ]]; then
-        warn "Directory $accela_fix_dir already exists. Removing it to get a fresh copy..."
-        rm -rf "$accela_fix_dir"
-    fi
-    info "Cloning ACCELA_FIX repository..."
-    if ! git clone "$ACCELA_FIX_REPO" "$accela_fix_dir"; then
-        fail "Failed to clone ACCELA_FIX repository."
-    fi
-    cd "$accela_fix_dir" || fail "Cannot enter $accela_fix_dir"
-    if [[ ! -f "RUN_ME" ]]; then
-        fail "RUN_ME script not found in repository."
-    fi
-    chmod +x RUN_ME
-    info "Running ACCELA_FIX installer (this will install Legacy Accela with run.sh)..."
-    if ! ./RUN_ME; then
-        warn "ACCELA_FIX installation may have failed. Check output above."
-        cd "$HOME" || true
-        return 1
-    fi
-    cd "$HOME" || true
-    ok "Legacy Accela (run.sh version) installed successfully."
-
-    info "Installing SLSsteam (headcrab) to provide Steam Linux Runtime patching..."
-    local tmp_headcrab
-    tmp_headcrab="$(mktemp -t headcrab.XXXX.sh)"
-    curl -fsSL "$HEADCRAB_URL" -o "$tmp_headcrab"
-    chmod +x "$tmp_headcrab"
-    bash "$tmp_headcrab"
-    rm -f "$tmp_headcrab"
-    ok "SLSsteam (headcrab) installed."
-
+    info "This combination fixes AppImage compatibility issues by using the Python source version from aglairdev/enter-the-wired."
+    
+    # The script from aglairdev already installs both Accela (run.sh) and SLSsteam
+    curl -fsSL "$LEGACY_ACCELA_REPO" | bash || fail "Legacy Accela installation failed."
+    
+    ok "Legacy Accela (run.sh) and SLSsteam installed successfully."
     show_post_install_instructions
-    ok "Legacy Accela + SLSsteam installation completed."
 }
 
 # ---------- Option 1: Install All (beta + standard accela) ----------
@@ -651,7 +616,7 @@ install_legacy_accela_and_sls_only() {
     ok "Legacy Accela + SLSsteam installation completed."
 }
 
-# ---------- Informational fixes (unchanged) ----------
+# ---------- Informational fixes ----------
 fix_missing_game_executable() {
     echo ""
     echo -e "${BOLD}${CYAN}Error: 'Missing game executable' or 'Fail on compatibility tool'${NC}"
@@ -926,7 +891,7 @@ interactive_menu() {
         echo "2) Install/Reinstall LuaTools plugin only (keeps Millennium)"
         echo "3) Install Millennium Legacy + plugin (old version, fallback)"
         echo "4) Install accela and slssteam only (standard - AppImage)"
-        echo "5) Install Legacy Accela run.sh + SLSsteam (Cybercountry-FIX)"
+        echo "5) Install Legacy Accela (source-based, run.sh) + SLSsteam (fix for AppImage issues)"
         echo "6) Fix common issues"
         echo "7) Uninstall Everything"
         echo "8) Cancel"
