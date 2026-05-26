@@ -891,7 +891,7 @@ interactive_menu() {
         echo "2) Install/Reinstall LuaTools plugin only (keeps Millennium)"
         echo "3) Install Millennium Legacy + plugin (old version, fallback)"
         echo "4) Install accela and slssteam only (standard - AppImage)"
-        echo "5) Install Legacy Accela (source-based, run.sh) + SLSsteam (fix for AppImage issues)"
+        echo "5) Install Legacy Accela (run.sh) + SLSsteam (fix for AppImage issues)"
         echo "6) Fix common issues"
         echo "7) Uninstall Everything"
         echo "8) Cancel"
