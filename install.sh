@@ -63,7 +63,7 @@ install_plugin_from_release() {
     fi
     local tmp_dir
     tmp_dir="$(mktemp -d)"
-    trap 'rm -rf "$tmp_dir"' EXIT
+    trap 'rm -rf "${tmp_dir:-}"' EXIT
     local meta_file="$tmp_dir/release.json"
     if ! curl -fsSL "$GITHUB_API_URL" -o "$meta_file"; then
         fail "Failed to fetch latest release metadata"
@@ -157,11 +157,11 @@ check_python_dependencies() {
     local packages=("httpx==0.27.2" "beautifulsoup4" "ruamel.yaml==0.18.6")
     for pkg in "${packages[@]}"; do
         info "Installing $pkg ..."
-        if $pip_cmd install --user "$pkg" &>/dev/null; then
+        if $pip_cmd install --user --break-system-packages "$pkg" &>/dev/null; then
             ok "Installed $pkg"
         else
             warn "Failed to install $pkg. Trying without --user..."
-            if $pip_cmd install "$pkg" &>/dev/null; then
+            if $pip_cmd install --break-system-packages "$pkg" &>/dev/null; then
                 ok "Installed $pkg (system-wide)"
             else
                 warn "Could not install $pkg. Manual installation may be required."
