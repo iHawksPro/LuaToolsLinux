@@ -119,6 +119,18 @@ and offers to install it when needed.
 
 ---
 
+## Star History
+
+<a href="https://www.star-history.com/?repos=Star123451%2FLuaToolsLinux&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=Star123451/LuaToolsLinux&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=Star123451/LuaToolsLinux&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=Star123451/LuaToolsLinux&type=date&legend=top-left" />
+ </picture>
+</a>
+
+---
+
 # License
 
 See the original LuaTools repository for license information.
