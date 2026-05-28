@@ -111,7 +111,7 @@ and offers to install it when needed.
 # Credits
 
 - **LuaTools Linux** — StarWarsK & geovanygrdt
-- **Contributors** — PeeblyWeeb
+- **Contributors** — PeeblyWeeb, GooseLander07
 - **Original LuaTools** — madoiscool
 - **SLSsteam** — AceSLS
 - **ACCELA / Enter The Wired** — ciscosweater
