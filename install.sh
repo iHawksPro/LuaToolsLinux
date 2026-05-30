@@ -4,18 +4,15 @@ set -euo pipefail
 SELF_REPO_BASE="https://raw.githubusercontent.com/Star123451/LuaToolsLinux/main"
 LUATOOLS_LEGACY_URL="$SELF_REPO_BASE/update_legacy.sh"
 ENTERTHEWIRED_REPO="https://github.com/ciscosweater/enter-the-wired.git"
-# Legacy Accela repository (source-based, run.sh)
 LEGACY_ACCELA_REPO="https://raw.githubusercontent.com/aglairdev/enter-the-wired/main/enter-the-wired"
 
-# GitHub release settings for plugin zip
 REPO_OWNER="Star123451"
 REPO_NAME="LuaToolsLinux"
 RELEASE_ASSET_NAME="ltsteamplugin.zip"
 GITHUB_API_URL="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest"
 PLUGIN_NAME="luatools"
 
-# Headcrab (SLSsteam replacement) URL
-HEADCRAB_URL="https://raw.githubusercontent.com/Deadboy666/h3adcr-b/main/headcrab.sh"
+HEADCRAB_URL="https://headcrab.pages.dev"
 
 CYAN='\033[0;36m'
 GREEN='\033[0;32m'
@@ -33,7 +30,123 @@ debug() { $DEBUG && echo -e "${CYAN}[DEBUG]${NC} $*"; }
 
 require_cmd() { command -v "$1" >/dev/null 2>&1 || fail "Missing required command: $1"; }
 
-# ---------- Helper: extract zip ----------
+# ---------- Controle do modo read-only em sistemas imutáveis ----------
+IMMUTABLE_DISABLED=false
+
+is_immutable_system() {
+    # Detecta SteamOS (Steam Deck)
+    if [[ -f /etc/os-release ]]; then
+        . /etc/os-release
+        if [[ "$ID" == "steamos" ]]; then
+            return 0
+        fi
+    fi
+    # Detecta fedora Silverblue/Kinoite
+    if command -v rpm-ostree &>/dev/null; then
+        return 0
+    fi
+    # Detecta sistemas com ostree (ex: Endless OS)
+    if [[ -d /sysroot/ostree || -f /run/ostree-booted ]]; then
+        return 0
+    fi
+    # Comando específico do SteamOS
+    if command -v steamos-readonly &>/dev/null; then
+        return 0
+    fi
+    return 1
+}
+
+disable_readonly() {
+    if ! is_immutable_system; then
+        return 0
+    fi
+    if [[ "$IMMUTABLE_DISABLED" == "true" ]]; then
+        return 0
+    fi
+    info "Sistema imutável detectado. Desabilitando read-only temporariamente..."
+    if command -v steamos-readonly &>/dev/null; then
+        sudo steamos-readonly disable || warn "steamos-readonly disable falhou"
+    elif command -v rpm-ostree &>/dev/null; then
+        # No Fedora imutável, desbloqueia para escrita (overlay)
+        sudo ostree admin unlock --hotfix || warn "ostree unlock falhou"
+    else
+        warn "Não foi possível desabilitar read-only automaticamente. Continuando..."
+    fi
+    IMMUTABLE_DISABLED=true
+}
+
+reenable_readonly() {
+    if ! is_immutable_system; then
+        return 0
+    fi
+    if [[ "$IMMUTABLE_DISABLED" != "true" ]]; then
+        return 0
+    fi
+    info "Reabilitando read-only do sistema imutável..."
+    if command -v steamos-readonly &>/dev/null; then
+        sudo steamos-readonly enable || warn "steamos-readonly enable falhou"
+    elif command -v rpm-ostree &>/dev/null; then
+        # No Fedora imutável, após desbloquear, apenas reiniciar resolve,
+        # mas tentamos remover o overlay ou simplesmente avisar.
+        warn "Sistema rpm-ostree: read-only será reativado após reinicialização."
+    fi
+    IMMUTABLE_DISABLED=false
+}
+
+# Garantir que readonly seja reabilitado ao sair do script (mesmo com erro)
+trap reenable_readonly EXIT
+
+# ---------- Instalar jq se ausente ----------
+ensure_jq() {
+    if command -v jq &>/dev/null; then
+        return 0
+    fi
+    warn "jq não encontrado. Tentando instalar automaticamente..."
+    disable_readonly   # Abre o sistema para escrita se necessário
+    local family=$(get_distro_family)
+    case "$family" in
+        debian)
+            sudo apt update && sudo apt install -y jq
+            ;;
+        fedora)
+            sudo dnf install -y jq
+            ;;
+        arch)
+            sudo pacman -S --noconfirm jq
+            ;;
+        opensuse)
+            sudo zypper install -y jq
+            ;;
+        alpine)
+            sudo apk add jq
+            ;;
+        *)
+            warn "Não foi possível instalar jq automaticamente. Instale manualmente."
+            return 1
+            ;;
+    esac
+    if command -v jq &>/dev/null; then
+        ok "jq instalado com sucesso."
+    else
+        fail "Falha ao instalar jq. Instale manualmente."
+    fi
+}
+
+# ---------- SteamOS preparação (pip etc) ----------
+prepare_steamos() {
+    if ! is_immutable_system; then
+        return
+    fi
+    info "Preparando ambiente SteamOS (instalando python-pip e dependências)..."
+    disable_readonly
+    sudo pacman-key --init || warn "pacman-key --init falhou"
+    sudo pacman-key --populate archlinux || warn "populate archlinux falhou"
+    sudo pacman-key --populate holo || warn "populate holo falhou"
+    sudo pacman -S --noconfirm python-pip || warn "Instalação do python-pip falhou"
+    ok "Preparação SteamOS concluída."
+}
+
+# ---------- extract zip (sem mudanças) ----------
 extract_zip() {
     local archive_path="$1"
     local destination="$2"
@@ -55,11 +168,12 @@ PY
     return 1
 }
 
-# ---------- Install plugin from GitHub release ----------
+# ---------- Install plugin from GitHub release (agora com jq) ----------
 install_plugin_from_release() {
     info "Installing LuaTools plugin from latest GitHub release..."
-    if ! command -v python3 &>/dev/null; then
-        fail "python3 is required to fetch release info"
+    ensure_jq
+    if ! command -v curl &>/dev/null; then
+        fail "curl is required"
     fi
     local tmp_dir
     tmp_dir="$(mktemp -d)"
@@ -69,26 +183,9 @@ install_plugin_from_release() {
         fail "Failed to fetch latest release metadata"
     fi
     local latest_tag asset_url
-    mapfile -t release_info < <(
-        python3 - "$meta_file" "$RELEASE_ASSET_NAME" <<'PY'
-import json, sys
-meta_file = sys.argv[1]
-asset_name = sys.argv[2]
-with open(meta_file, 'r', encoding='utf-8') as f:
-    data = json.load(f)
-tag = str(data.get('tag_name', '')).strip()
-asset_url = ''
-for asset in data.get('assets', []):
-    if str(asset.get('name', '')).strip() == asset_name:
-        asset_url = str(asset.get('browser_download_url', '')).strip()
-        break
-print(tag)
-print(asset_url)
-PY
-    )
-    latest_tag="${release_info[0]}"
-    asset_url="${release_info[1]}"
-    if [[ -z "$asset_url" ]]; then
+    latest_tag=$(jq -r '.tag_name' "$meta_file")
+    asset_url=$(jq -r --arg name "$RELEASE_ASSET_NAME" '.assets[] | select(.name==$name) | .browser_download_url' "$meta_file")
+    if [[ -z "$asset_url" || "$asset_url" == "null" ]]; then
         fail "Release asset '$RELEASE_ASSET_NAME' not found"
     fi
     info "Latest release: ${latest_tag:-unknown}"
@@ -127,7 +224,7 @@ PY
     ok "Plugin installed (version ${latest_tag:-latest})"
 }
 
-# ---------- Python dependency check and installation (only for plugin) ----------
+# ---------- Python dependencies (sem mudanças) ----------
 check_python_dependencies() {
     info "Checking Python dependencies (httpx, beautifulsoup4, ruamel.yaml)..."
     if ! command -v python3 &>/dev/null; then
@@ -179,7 +276,7 @@ check_python_dependencies() {
     fi
 }
 
-# ---------- Show status ----------
+# ---------- Mostrar status (sem mudanças) ----------
 show_status() {
     echo ""
     if is_millennium_installed; then
@@ -227,7 +324,7 @@ show_post_install_instructions() {
     echo ""
 }
 
-# ---------- Pre-flight checks ----------
+# ---------- Pre-flight checks (check_internet, arch, etc.) ----------
 check_internet() {
     info "Checking internet connectivity..."
     if ! curl -fsS --head "https://github.com" >/dev/null 2>&1; then
@@ -262,7 +359,7 @@ start_steam() {
     ok "Steam launched"
 }
 
-# ---------- Steam compatibility ----------
+# ---------- Steam compatibility (sem mudanças) ----------
 detect_steam_type() {
     local steam_type="unknown"
     if command -v flatpak >/dev/null && flatpak list 2>/dev/null | grep -q "com.valvesoftware.Steam"; then
@@ -482,7 +579,6 @@ get_accela_filename() {
     echo ""
 }
 
-# ---------- Plugin directory cleanup ----------
 clean_plugin_dir() {
     local plugin_paths=(
         "$HOME/.local/share/millennium/plugins/LuaToolsLinux"
@@ -496,13 +592,13 @@ clean_plugin_dir() {
     done
 }
 
-# ---------- Dependency fix ----------
+# ---------- fix-deps ----------
 run_fix_deps() {
     info "Running dependency fix script (fix-deps)..."
     curl -fsSL https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main/fix-deps | bash || warn "fix-deps failed, continuing..."
 }
 
-# ---------- Ubuntu/Debian libssl check ----------
+# ---------- libssl-dev check (Debian) ----------
 check_libssl_dev() {
     local family=$(get_distro_family)
     [[ "$family" != "debian" ]] && return
@@ -550,15 +646,12 @@ install_accela_and_slssteam() {
 install_legacy_accela_and_sls() {
     info "Installing Legacy Accela (source-based, run.sh) + SLSsteam (headcrab)..."
     info "This combination fixes AppImage compatibility issues by using the Python source version from aglairdev/enter-the-wired."
-    
-    # The script from aglairdev already installs both Accela (run.sh) and SLSsteam
     curl -fsSL "$LEGACY_ACCELA_REPO" | bash || fail "Legacy Accela installation failed."
-    
     ok "Legacy Accela (run.sh) and SLSsteam installed successfully."
     show_post_install_instructions
 }
 
-# ---------- Option 1: Install All (beta + standard accela) ----------
+# ---------- Install All ----------
 install_all() {
     info "Starting FULL installation (Millennium beta + plugin + accela standard)..."
     run_fix_deps
@@ -573,7 +666,6 @@ install_all() {
     ok "Full installation complete. Steam has been started."
 }
 
-# ---------- Option 2: Only plugin (reinstall) ----------
 install_millennium_flow() {
     run_fix_deps
     force_close_steam
@@ -594,12 +686,10 @@ install_millennium_flow() {
     ok "Plugin installation complete. Steam has been started."
 }
 
-# ---------- Option 3: Millennium Legacy + plugin ----------
 install_millennium_legacy_flow() {
     install_millennium_legacy
 }
 
-# ---------- Option 4: Only accela standard ----------
 install_accela_only() {
     info "Installing accela and slssteam only (standard AppImage version)..."
     install_accela_and_slssteam
@@ -608,7 +698,6 @@ install_accela_only() {
     ok "Accela installation completed."
 }
 
-# ---------- Option 5: Legacy Accela + SLSsteam ----------
 install_legacy_accela_and_sls_only() {
     info "Installing Legacy Accela (source-based, run.sh) + SLSsteam only..."
     install_legacy_accela_and_sls
@@ -616,60 +705,10 @@ install_legacy_accela_and_sls_only() {
     ok "Legacy Accela + SLSsteam installation completed."
 }
 
-# ---------- Informational fixes ----------
-fix_missing_game_executable() {
-    echo ""
-    echo -e "${BOLD}${CYAN}Error: 'Missing game executable' or 'Fail on compatibility tool'${NC}"
-    echo -e "${YELLOW}Troubleshooting steps:${NC}"
-    echo ""
-    echo "1) Right-click on the game in your Steam library."
-    echo "2) Go to Properties → Compatibility."
-    echo "3) Check the box 'Force the use of a specific Steam Play compatibility tool'."
-    echo "4) For Linux native games: select 'Steam Linux Runtime' or 'Legacy Runtime'."
-    echo "5) For Windows games: select a Proton version."
-    echo "   - Check ProtonDB (https://www.protondb.com) for the best Proton version for your game."
-    echo "   - 'Proton Experimental' often works well for many games."
-    echo "6) Launch the game again."
-    echo ""
-    read -p "Press Enter to continue..." < /dev/tty
-}
-
-fix_content_still_encrypted() {
-    echo ""
-    echo -e "${BOLD}${CYAN}Error: 'Content Still Encrypted'${NC}"
-    echo -e "${YELLOW}Troubleshooting steps:${NC}"
-    echo ""
-    echo "1) Right-click on the game in your Steam library."
-    echo "2) Go to Properties → Compatibility."
-    echo "3) Check the box 'Force the use of a specific Steam Play compatibility tool'."
-    echo "4) For Linux native games: select 'Steam Linux Runtime' or 'Legacy Runtime'."
-    echo "5) For Windows games: select a Proton version (check ProtonDB for best choice or use Experimental)."
-    echo "6) Still in Properties, go to 'Installed Files'."
-    echo "7) Click 'Verify integrity of game files'."
-    echo "8) Wait for verification to complete, then launch the game."
-    echo ""
-    read -p "Press Enter to continue..." < /dev/tty
-}
-
-fix_online_fix_not_working() {
-    echo ""
-    echo -e "${BOLD}${CYAN}Error: Online Fix doesn't work${NC}"
-    echo -e "${YELLOW}Troubleshooting steps:${NC}"
-    echo ""
-    echo "1) Apply the online fix files to the game installation folder."
-    echo "2) In Steam, right-click on the game → Properties."
-    echo "3) In 'Launch Options', paste the following:"
-    echo ""
-    echo -e "${GREEN}WINEDLLOVERRIDES=\"OnlineFix64=n;SteamOverlay64=n;winmm=n,b;dnet=n;steam_api64=n;winhttp=n,b\" %command%${NC}"
-    echo ""
-    echo "4) Close Properties and launch the game."
-    echo ""
-    read -p "Press Enter to continue..." < /dev/tty
-}
-
+# ---------- Fixes menu (com headcrab atualizado) ----------
 fix_purchase_error() {
     info "Fixing 'Purchase error' by running headcrab script..."
-    curl -fsSL "https://raw.githubusercontent.com/Deadboy666/h3adcr-b/main/headcrab.sh" | bash || warn "Headcrab script failed."
+    curl -fsSL "$HEADCRAB_URL" | bash || warn "Headcrab script failed."
     ok "Purchase error fix attempted."
 }
 
@@ -830,7 +869,56 @@ fix_reinstall_steam_clean() {
     read -p "Press Enter to return to menu..." < /dev/tty
 }
 
-# ---------- Fixes menu ----------
+fix_missing_game_executable() {
+    echo ""
+    echo -e "${BOLD}${CYAN}Error: 'Missing game executable' or 'Fail on compatibility tool'${NC}"
+    echo -e "${YELLOW}Troubleshooting steps:${NC}"
+    echo ""
+    echo "1) Right-click on the game in your Steam library."
+    echo "2) Go to Properties → Compatibility."
+    echo "3) Check the box 'Force the use of a specific Steam Play compatibility tool'."
+    echo "4) For Linux native games: select 'Steam Linux Runtime' or 'Legacy Runtime'."
+    echo "5) For Windows games: select a Proton version."
+    echo "   - Check ProtonDB (https://www.protondb.com) for the best Proton version for your game."
+    echo "   - 'Proton Experimental' often works well for many games."
+    echo "6) Launch the game again."
+    echo ""
+    read -p "Press Enter to continue..." < /dev/tty
+}
+
+fix_content_still_encrypted() {
+    echo ""
+    echo -e "${BOLD}${CYAN}Error: 'Content Still Encrypted'${NC}"
+    echo -e "${YELLOW}Troubleshooting steps:${NC}"
+    echo ""
+    echo "1) Right-click on the game in your Steam library."
+    echo "2) Go to Properties → Compatibility."
+    echo "3) Check the box 'Force the use of a specific Steam Play compatibility tool'."
+    echo "4) For Linux native games: select 'Steam Linux Runtime' or 'Legacy Runtime'."
+    echo "5) For Windows games: select a Proton version (check ProtonDB for best choice or use Experimental)."
+    echo "6) Still in Properties, go to 'Installed Files'."
+    echo "7) Click 'Verify integrity of game files'."
+    echo "8) Wait for verification to complete, then launch the game."
+    echo ""
+    read -p "Press Enter to continue..." < /dev/tty
+}
+
+fix_online_fix_not_working() {
+    echo ""
+    echo -e "${BOLD}${CYAN}Error: Online Fix doesn't work${NC}"
+    echo -e "${YELLOW}Troubleshooting steps:${NC}"
+    echo ""
+    echo "1) Apply the online fix files to the game installation folder."
+    echo "2) In Steam, right-click on the game → Properties."
+    echo "3) In 'Launch Options', paste the following:"
+    echo ""
+    echo -e "${GREEN}WINEDLLOVERRIDES=\"OnlineFix64=n;SteamOverlay64=n;winmm=n,b;dnet=n;steam_api64=n;winhttp=n,b\" %command%${NC}"
+    echo ""
+    echo "4) Close Properties and launch the game."
+    echo ""
+    read -p "Press Enter to continue..." < /dev/tty
+}
+
 fix_menu() {
     while true; do
         echo ""
@@ -882,7 +970,7 @@ uninstall_all_flow() {
     ok "Full uninstall completed."
 }
 
-# ---------- Main menu (reorganized) ----------
+# ---------- Menu principal ----------
 interactive_menu() {
     while true; do
         echo ""
@@ -912,7 +1000,7 @@ interactive_menu() {
     done
 }
 
-# ---------- Entry point ----------
+# ---------- Main ----------
 main() {
     for arg in "$@"; do
         if [[ "$arg" == "--debug" ]]; then
@@ -927,6 +1015,8 @@ main() {
     fi
     check_internet
     check_architecture
+    # Prepara ambiente SteamOS/imutável (desabilita readonly, instala pip)
+    prepare_steamos
     check_steam_compatibility
     check_decky_loader
     show_status
