@@ -749,40 +749,69 @@ fix_no_licenses_info() {
 }
 
 fix_remove_piracy_blocks() {
-    local theme_css_dir="$HOME/.steam/steam/millennium/themes/Steam/src/css"
-    local files_to_fix=(
-        "libraryroot.custom.css"
-        "overlay.custom.css"
-        "regular.css"
-        "startupLogin.custom.css"
-        "webkit.css"
-        "steam/gamepage.css"
+    # Auto-detect theme directory
+    local theme_dirs=(
+        "$HOME/.steam/steam/millennium/themes/Steam"
+        "$HOME/.local/share/Steam/millennium/themes/Steam"
+        "$HOME/.millennium/themes/Steam"
     )
-    echo ""
-    if [[ ! -d "$theme_css_dir" ]]; then
-        warn "Theme CSS directory not found: $theme_css_dir"
-        warn "Make sure Millennium and the theme are installed."
+    local theme_dir=""
+    for dir in "${theme_dirs[@]}"; do
+        if [[ -d "$dir/src/css" ]]; then
+            theme_dir="$dir"
+            break
+        fi
+    done
+
+    if [[ -z "$theme_dir" ]]; then
+        warn "Theme directory not found."
+        warn "Make sure Millennium and the SpaceTheme are installed."
         return 1
     fi
-    ok "Directory found: $theme_css_dir"
+
+    local css_dir="$theme_dir/src/css"
+    local files=(
+        "friends.custom.css"
+        "inputs/inputs.css"
+        "plugins/hltb.css"
+        "webkit.css"
+        "startupLogin.custom.css"
+        "regular.css"
+        "libraryroot.custom.css"
+    )
+
+    echo ""
+    ok "Theme directory found: $theme_dir"
+    echo ""
+
     local any_fixed=false
-    for filename in "${files_to_fix[@]}"; do
-        local filepath="$theme_css_dir/$filename"
+    for filename in "${files[@]}"; do
+        local filepath="$css_dir/$filename"
         if [[ ! -f "$filepath" ]]; then
-            echo "$filename -> NOT FOUND, skipping"
+            echo "  $filename -> NOT FOUND, skipping"
             continue
         fi
-        echo -n "$filename ... "
+
+        echo -n "  $filename ... "
         cp "$filepath" "$filepath.bak"
-        sed -i '/Pls remove any piracy plugin/d' "$filepath"
-        sed -i '/\[class\*="luatools"/d' "$filepath"
-        sed -i '/\[data-millennium-plugin\*="luatools"/d' "$filepath"
-        sed -i '/\[class\*="manilua"/d' "$filepath"
-        sed -i '/\[data-millennium-plugin\*="manilua"/d' "$filepath"
-        sed -i '/\[class\*="lumea"/d' "$filepath"
-        sed -i '/\[data-millennium-plugin\*="lumea"/d' "$filepath"
-        sed -i '/^[[:space:]]*$/d' "$filepath"
-        if ! cmp -s "$filepath" "$filepath.bak"; then
+
+        python3 -c "
+import re, sys
+with open('$filepath', 'r') as f:
+    c = f.read()
+old = c
+c = re.sub(r'/\*.*?Ban piracy plugins.*?\*/.*?color: #fff !important;\n\}', '', c, flags=re.DOTALL)
+c = re.sub(r'.*?(luatools|manilua|lumea).*?\n', '', c)
+c = re.sub(r'\n{3,}', '\n\n', c)
+if c != old:
+    with open('$filepath', 'w') as f:
+        f.write(c)
+    sys.exit(0)
+else:
+    sys.exit(1)
+"
+
+        if [[ $? -eq 0 ]]; then
             echo "✔ Removed"
             any_fixed=true
         else
@@ -790,11 +819,12 @@ fix_remove_piracy_blocks() {
             echo "○ No block found"
         fi
     done
+
     echo ""
     if $any_fixed; then
-        ok "Anti-piracy blocks removed. Restart Steam for changes."
+        ok "Anti-piracy blocks removed. Restart Steam/Millennium to apply."
     else
-        warn "No changes made."
+        warn "No blocks found."
     fi
 }
 
@@ -977,24 +1007,23 @@ interactive_menu() {
         echo -e "${BOLD}LuaTools Installer${NC}"
         echo "1) Install All (Millennium beta + plugin + accela standard)"
         echo "2) Install/Reinstall LuaTools plugin only (keeps Millennium)"
-        echo "3) Install Millennium Legacy + plugin (old version, fallback)"
-        echo "4) Install accela and slssteam only (standard - AppImage)"
-        echo "5) Install Legacy Accela (run.sh) + SLSsteam (fix for AppImage issues)"
-        echo "6) Fix common issues"
-        echo "7) Uninstall Everything"
-        echo "8) Cancel"
+        echo "3) Install accela and slssteam only (standard - AppImage)"
+        echo "4) Install Legacy Accela (run.sh) + SLSsteam (fix for AppImage issues)"
+        echo "5) Fix common issues"
+        echo "6) Uninstall Everything"
+        echo "7) Cancel"
         echo ""
-        printf "Choose an option [1-8]: " > /dev/tty
+        printf "Choose an option [1-7]: " > /dev/tty
         local choice; read -r choice < /dev/tty
         case "$choice" in
             1) install_all ; break ;;
             2) install_millennium_flow ; break ;;
-            3) install_millennium_legacy_flow ; break ;;
-            4) install_accela_only ; break ;;
-            5) install_legacy_accela_and_sls_only ; break ;;
-            6) fix_menu ;;
-            7) uninstall_all_flow ; break ;;
-            8) info "Cancelled." ; exit 0 ;;
+            # 3 was Millennium Legacy (disabled - broken URL)
+            3) install_accela_only ; break ;;
+            4) install_legacy_accela_and_sls_only ; break ;;
+            5) fix_menu ;;
+            6) uninstall_all_flow ; break ;;
+            7) info "Cancelled." ; exit 0 ;;
             *) warn "Invalid option." ;;
         esac
     done
@@ -1024,11 +1053,10 @@ main() {
     case "${1:-}" in
         1|--install-all)       install_all ;;
         2|--millennium)        install_millennium_flow ;;
-        3|--legacy)            install_millennium_legacy_flow ;;
-        4|--accela)            install_accela_only ;;
-        5|--legacy-accela)     install_legacy_accela_and_sls_only ;;
-        6|--fix)               fix_menu ;;
-        7|--uninstall)         uninstall_all_flow ;;
+        3|--accela)            install_accela_only ;;
+        4|--legacy-accela)     install_legacy_accela_and_sls_only ;;
+        5|--fix)               fix_menu ;;
+        6|--uninstall)         uninstall_all_flow ;;
         --cancel)              info "Cancelled." ; exit 0 ;;
         -h|--help)
             cat <<'EOF'
@@ -1037,11 +1065,10 @@ Usage: install.sh [option] [--debug]
 Options:
     1, --install-all       Install all (Millennium beta + plugin + accela standard)
     2, --millennium        Install/Reinstall LuaTools plugin only (keeps Millennium)
-    3, --legacy            Install Millennium Legacy + plugin (old version, fallback)
-    4, --accela            Install accela and slssteam only (standard - AppImage)
-    5, --legacy-accela     Install Legacy Accela (source-based, run.sh) + SLSsteam (FIX)
-    6, --fix               Open fixes menu
-    7, --uninstall         Uninstall everything
+    3, --accela            Install accela and slssteam only (standard - AppImage)
+    4, --legacy-accela     Install Legacy Accela (source-based, run.sh) + SLSsteam (FIX)
+    5, --fix               Open fixes menu
+    6, --uninstall         Uninstall everything
     --cancel               Exit
     --debug                Enable debug output
     -h, --help             Show this help
