@@ -229,7 +229,7 @@ check_python_dependencies() {
         return 0
     fi
     warn "Some Python dependencies are missing. Attempting to install them..."
-    
+
     local pip_cmd=""
     if command -v pip3 &>/dev/null; then
         pip_cmd="pip3"
@@ -243,7 +243,7 @@ check_python_dependencies() {
         }
         pip_cmd="python3 -m pip"
     fi
-    
+
     local packages=("httpx==0.27.2" "beautifulsoup4" "ruamel.yaml==0.18.6")
     for pkg in "${packages[@]}"; do
         info "Installing $pkg ..."
@@ -258,7 +258,7 @@ check_python_dependencies() {
             fi
         fi
     done
-    
+
     if python3 -c "import httpx, bs4, ruamel.yaml" 2>/dev/null; then
         ok "Python dependencies successfully installed."
         return 0
@@ -293,7 +293,7 @@ show_status() {
     fi
 }
 
-# ---------- Post-install instructions ----------
+# ---------- Post-install instructions (reused for the new fix) ----------
 show_post_install_instructions() {
     if ! is_accela_installed; then
         return
@@ -645,15 +645,15 @@ install_legacy_accela_and_sls() {
 }
 
 # ============================================================
-# NEW: Install Accela to fix illegal instruction + SLSsteam (by Cybercountry)
+# Install Accela to fix illegal instruction + SLSsteam (by Cybercountry)
 # ============================================================
 install_accela_fix_illegal_instruction() {
     info "Installing Accela to fix illegal instruction (by Cybercountry) + SLSsteam..."
-    
+
     local temp_dir
     temp_dir="$(mktemp -d)"
     cd "$temp_dir"
-    
+
     info "Cloning ACCELA_FIX repository from Cybercountry..."
     if ! git clone "$ACCELA_FIX_REPO" ACCELA_FIX; then
         warn "Git clone failed. Trying with curl fallback..."
@@ -667,9 +667,9 @@ install_accela_fix_illegal_instruction() {
     else
         cd ACCELA_FIX
     fi
-    
+
     chmod +x RUN_ME 2>/dev/null || chmod +x "$temp_dir/ACCELA_FIX/RUN_ME" 2>/dev/null || warn "RUN_ME not found or not executable"
-    
+
     info "Executing ACCELA_FIX installer (RUN_ME) - this will set up Accela..."
     if [[ -f "./RUN_ME" ]]; then
         ./RUN_ME || warn "ACCELA_FIX installer reported issues, but continuing..."
@@ -678,22 +678,22 @@ install_accela_fix_illegal_instruction() {
     else
         warn "RUN_ME script not found. Installation may be incomplete."
     fi
-    
+
     cd - >/dev/null
     rm -rf "$temp_dir"
-    
+
     info "Installing SLSsteam via headcrab..."
     if ! curl -fsSL "$HEADCRAB_URL" | bash; then
         warn "SLSsteam installation had issues. You may need to run headcrab manually later."
     else
         ok "SLSsteam installed successfully."
     fi
-    
+
     ok "Accela (by Cybercountry) and SLSsteam installation completed."
     show_post_install_instructions
 }
 
-# ---------- Install All (unchanged) ----------
+# ---------- Install All ----------
 install_all() {
     info "Starting FULL installation (Millennium beta + plugin + accela standard)..."
     run_fix_deps
@@ -747,7 +747,7 @@ install_legacy_accela_and_sls_only() {
     ok "Legacy Accela + SLSsteam installation completed."
 }
 
-# ---------- Fixes menu (new option 10: "Crack don't work?") ----------
+# ---------- Fixes menu ----------
 fix_purchase_error() {
     info "Fixing 'Purchase error' by running headcrab script..."
     curl -fsSL "$HEADCRAB_URL" | bash || warn "Headcrab script failed."
@@ -974,7 +974,6 @@ fix_content_still_encrypted() {
     read -p "Press Enter to continue..." < /dev/tty
 }
 
-# ORIGINAL "Online Fix doesn't work" - unchanged
 fix_online_fix_not_working() {
     echo ""
     echo -e "${BOLD}${CYAN}Error: Online Fix doesn't work${NC}"
@@ -991,7 +990,6 @@ fix_online_fix_not_working() {
     read -p "Press Enter to continue..." < /dev/tty
 }
 
-# NEW: Crack don't work? (generic DLL configuration)
 fix_crack_dll_config() {
     echo ""
     echo -e "${BOLD}${CYAN}Crack don't work?${NC}"
@@ -1016,6 +1014,36 @@ fix_crack_dll_config() {
     read -p "Press Enter to continue..." < /dev/tty
 }
 
+# NEW: Game not downloading? Show important configuration note
+fix_game_not_downloading() {
+    echo ""
+    echo -e "${BOLD}${RED}⚠️  GAME NOT DOWNLOADING? ⚠️${NC}"
+    echo -e "${YELLOW}You probably skipped the post-installation configuration.${NC}"
+    echo -e "${YELLOW}You did NOT set the Accela path in LuaTools menu, or you are trying to download directly from Steam without Accela.${NC}"
+    echo ""
+    echo -e "${BOLD}Follow the instructions below that you skipped earlier:${NC}"
+    echo ""
+    # Reuse the post-install instructions but adapt a bit
+    echo -e "${BOLD}${YELLOW}+----------------------------------------------------------------------+${NC}"
+    echo -e "${BOLD}${YELLOW}|                    IMPORTANT: Accela Configuration                    |${NC}"
+    echo -e "${BOLD}${YELLOW}+----------------------------------------------------------------------+${NC}"
+    echo -e "${BOLD}${YELLOW}|${NC}  1) Open accela, config options/downloads.                           ${BOLD}${YELLOW}|${NC}"
+    echo -e "${BOLD}${YELLOW}|${NC}  2) Ensure the option ${BOLD}\"Limit downloads to Steam Library\"${NC} is ${BOLD}ENABLED${NC}.              ${BOLD}${YELLOW}|${NC}"
+    echo -e "${BOLD}${YELLOW}|${NC}  3) In Steam, click the Steam name at the top-left corner.          ${BOLD}${YELLOW}|${NC}"
+    echo -e "${BOLD}${YELLOW}|${NC}     Open Millennium → Plugins tab → Enable ${BOLD}LuaTools${NC}.                    ${BOLD}${YELLOW}|${NC}"
+    echo -e "${BOLD}${YELLOW}|${NC}  4) Go to Lua tools menu on Steam/config ${BOLD}\"External Launcher (ACCELA)\"${NC}               ${BOLD}${YELLOW}|${NC}"
+    echo -e "${BOLD}${YELLOW}|${NC}     and click the folder icon.                                        ${BOLD}${YELLOW}|${NC}"
+    echo -e "${BOLD}${YELLOW}|${NC}  5) Navigate to ${BOLD}~/.local/share/ACCELA${NC} and select:                                   ${BOLD}${YELLOW}|${NC}"
+    echo -e "${BOLD}${YELLOW}|${NC}       - ${GREEN}run.sh${NC} (source code version)                                            ${BOLD}${YELLOW}|${NC}"
+    echo -e "${BOLD}${YELLOW}|${NC}  6) Click the save icon (diskette).                                      ${BOLD}${YELLOW}|${NC}"
+    echo -e "${BOLD}${YELLOW}|${NC}  7) You can now add your game directly from the game page.                ${BOLD}${YELLOW}|${NC}"
+    echo -e "${BOLD}${YELLOW}+----------------------------------------------------------------------+${NC}"
+    echo ""
+    echo -e "${GREEN}After completing these steps, remove game by luatools menu on game page, then try downloading your game again by add game via luatools on game page.${NC}"
+    echo ""
+    read -p "Press Enter to continue..." < /dev/tty
+}
+
 fix_menu() {
     while true; do
         echo ""
@@ -1030,9 +1058,10 @@ fix_menu() {
         echo "8) Content Still Encrypted (info)"
         echo "9) Online Fix doesn't work (info)"
         echo "10) Crack don't work?"
-        echo "11) Back to main menu"
+        echo "11) Game not downloading? Read Important Configuration Note"
+        echo "12) Back to main menu"
         echo ""
-        printf "Choose an option [1-11]: " > /dev/tty
+        printf "Choose an option [1-12]: " > /dev/tty
         local choice; read -r choice < /dev/tty
         case "$choice" in
             1) fix_purchase_error ;;
@@ -1045,7 +1074,8 @@ fix_menu() {
             8) fix_content_still_encrypted ;;
             9) fix_online_fix_not_working ;;
             10) fix_crack_dll_config ;;
-            11) break ;;
+            11) fix_game_not_downloading ;;
+            12) break ;;
             *) warn "Invalid option." ;;
         esac
     done
