@@ -1062,7 +1062,7 @@ fix_speed_units_explanation() {
     echo ""
     echo "Example:"
     echo "  Steam shows 600 Mb/s  →  divided by 8  →  equals 75 MB/s in Accela."
-    echo "  If Accela shows 60 MB/s → multiplied by 8 → equals 480 Mb/s on Steam."
+    echo "  If Accela shows 75 MB/s → multiplied by 8 → equals 600 Mb/s on Steam."
     echo ""
     echo -e "${BOLD}So your speeds are actually the same, just displayed differently!${NC}"
     echo ""
