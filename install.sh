@@ -13,7 +13,7 @@ RELEASE_ASSET_NAME="ltsteamplugin.zip"
 GITHUB_API_URL="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest"
 PLUGIN_NAME="luatools"
 
-HEADCRAB_URL="https://headcrab.pages.dev"   # <--- URL corrigida
+HEADCRAB_URL="https://headcrab.pages.dev"
 
 CYAN='\033[0;36m'
 GREEN='\033[0;32m'
@@ -747,7 +747,7 @@ install_legacy_accela_and_sls_only() {
     ok "Legacy Accela + SLSsteam installation completed."
 }
 
-# ---------- Fixes menu ----------
+# ---------- Fixes menu (new option 10: "Crack don't work?") ----------
 fix_purchase_error() {
     info "Fixing 'Purchase error' by running headcrab script..."
     curl -fsSL "$HEADCRAB_URL" | bash || warn "Headcrab script failed."
@@ -974,6 +974,7 @@ fix_content_still_encrypted() {
     read -p "Press Enter to continue..." < /dev/tty
 }
 
+# ORIGINAL "Online Fix doesn't work" - unchanged
 fix_online_fix_not_working() {
     echo ""
     echo -e "${BOLD}${CYAN}Error: Online Fix doesn't work${NC}"
@@ -984,6 +985,31 @@ fix_online_fix_not_working() {
     echo "3) In 'Launch Options', paste the following:"
     echo ""
     echo -e "${GREEN}WINEDLLOVERRIDES=\"OnlineFix64=n;SteamOverlay64=n;winmm=n,b;dnet=n;steam_api64=n;winhttp=n,b\" %command%${NC}"
+    echo ""
+    echo "4) Close Properties and launch the game."
+    echo ""
+    read -p "Press Enter to continue..." < /dev/tty
+}
+
+# NEW: Crack don't work? (generic DLL configuration)
+fix_crack_dll_config() {
+    echo ""
+    echo -e "${BOLD}${CYAN}Crack don't work?${NC}"
+    echo -e "${YELLOW}If your crack/online fix includes one or more .dll files, you need to tell Wine/Proton to load them properly.${NC}"
+    echo ""
+    echo -e "${BOLD}Steps:${NC}"
+    echo "1) Identify the DLL file(s) that came with the crack (e.g., voices38.dll, steam_api64.dll, OnlineFix64.dll, etc.)."
+    echo "2) In Steam, right-click on the game → Properties → General."
+    echo "3) In the 'LAUNCH OPTIONS' field, add:"
+    echo ""
+    echo -e "${GREEN}WINEDLLOVERRIDES=\"dllname=n,b\" %command%${NC}"
+    echo ""
+    echo -e "${YELLOW}Replace \"dllname\" with the actual DLL filename (without the .dll extension).${NC}"
+    echo ""
+    echo "Examples:"
+    echo "  - If the DLL is called ${GREEN}voices38.dll${NC} → ${GREEN}WINEDLLOVERRIDES=\"voices38=n,b\" %command%${NC}"
+    echo "  - If the DLL is called ${GREEN}OnlineFix64.dll${NC} → ${GREEN}WINEDLLOVERRIDES=\"OnlineFix64=n,b\" %command%${NC}"
+    echo "  - For multiple DLLs, separate with semicolons: ${GREEN}WINEDLLOVERRIDES=\"dll1=n,b;dll2=n,b\" %command%${NC}"
     echo ""
     echo "4) Close Properties and launch the game."
     echo ""
@@ -1003,9 +1029,10 @@ fix_menu() {
         echo "7) Missing game executable / Fail on compatibility tool (info)"
         echo "8) Content Still Encrypted (info)"
         echo "9) Online Fix doesn't work (info)"
-        echo "10) Back to main menu"
+        echo "10) Crack don't work?"
+        echo "11) Back to main menu"
         echo ""
-        printf "Choose an option [1-10]: " > /dev/tty
+        printf "Choose an option [1-11]: " > /dev/tty
         local choice; read -r choice < /dev/tty
         case "$choice" in
             1) fix_purchase_error ;;
@@ -1017,7 +1044,8 @@ fix_menu() {
             7) fix_missing_game_executable ;;
             8) fix_content_still_encrypted ;;
             9) fix_online_fix_not_working ;;
-            10) break ;;
+            10) fix_crack_dll_config ;;
+            11) break ;;
             *) warn "Invalid option." ;;
         esac
     done
