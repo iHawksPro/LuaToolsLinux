@@ -870,7 +870,11 @@ PYEOF
 
     echo ""
     if $any_fixed; then
-        ok "Anti-piracy blocks removed. Restart Steam/Millennium to apply."
+        ok "Anti-piracy blocks removed. Restarting Steam..."
+        force_close_steam
+        sleep 2
+        start_steam
+        ok "Steam restarted with fixes applied."
     else
         ok "No blocks found."
     fi
