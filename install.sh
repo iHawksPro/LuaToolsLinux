@@ -795,7 +795,6 @@ fix_no_licenses_info() {
 }
 
 fix_remove_piracy_blocks() {
-    # Auto-detect theme directory
     local theme_dirs=(
         "$HOME/.steam/steam/millennium/themes/Steam"
         "$HOME/.local/share/Steam/millennium/themes/Steam"
@@ -841,28 +840,30 @@ fix_remove_piracy_blocks() {
         echo -n "  $filename ... "
         cp "$filepath" "$filepath.bak"
 
-        python3 -c "
+        python3 - "$filepath" << 'PYEOF'
 import re, sys
-with open('$filepath', 'r') as f:
+filepath = sys.argv[1]
+with open(filepath, 'r') as f:
     c = f.read()
 old = c
-c = re.sub(r'/\*.*?Ban piracy plugins.*?\*/.*?color: #fff !important;\n\}', '', c, flags=re.DOTALL)
-c = re.sub(r'.*?(luatools|manilua|lumea).*?\n', '', c)
+c = re.sub(r'/\*.*?[Bb]an\s+piracy\s+plugins.*?\*/.*?(?:\{|display:\s*none|color:\s*#[0-9a-fA-F]+\s*!important|\})', '', c, flags=re.DOTALL)
+c = re.sub(r'.*?(?:luatools|manilua|lumea).*?(?:\n|$)', '', c)
 c = re.sub(r'\n{3,}', '\n\n', c)
+c = re.sub(r'\n\s*\n\s*\}', '\n}', c)
 if c != old:
-    with open('$filepath', 'w') as f:
+    with open(filepath, 'w') as f:
         f.write(c)
     sys.exit(0)
 else:
     sys.exit(1)
-"
+PYEOF
 
         if [[ $? -eq 0 ]]; then
-            echo "✔ Removed"
+            echo "Removed"
             any_fixed=true
         else
             rm -f "$filepath.bak"
-            echo "○ No block found"
+            echo "No block found"
         fi
     done
 
@@ -870,7 +871,7 @@ else:
     if $any_fixed; then
         ok "Anti-piracy blocks removed. Restart Steam/Millennium to apply."
     else
-        warn "No blocks found."
+        ok "No blocks found."
     fi
 }
 
