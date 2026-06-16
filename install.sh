@@ -796,50 +796,90 @@ fix_no_licenses_info() {
 }
 
 fix_remove_piracy_blocks() {
-    local theme_dirs=(
-        "$HOME/.steam/steam/millennium/themes/Steam"
-        "$HOME/.local/share/Steam/millennium/themes/Steam"
-        "$HOME/.millennium/themes/Steam"
+    local css_paths=(
+        "$HOME/.steam/steam/millennium/themes/Steam/src/css"
+        "$HOME/.local/share/Steam/millennium/themes/Steam/src/css"
+        "$HOME/.millennium/themes/Steam/src/css"
     )
-    local theme_dir=""
-    for dir in "${theme_dirs[@]}"; do
-        if [[ -d "$dir/src/css" ]]; then
-            theme_dir="$dir"
+    local css_dir=""
+    for dir in "${css_paths[@]}"; do
+        if [[ -d "$dir" ]]; then
+            css_dir="$dir"
             break
         fi
     done
 
-    if [[ -z "$theme_dir" ]]; then
+    if [[ -z "$css_dir" ]]; then
         warn "Theme directory not found."
         warn "Make sure Millennium and the SpaceTheme are installed."
         return 1
     fi
 
-    local css_dir="$theme_dir/src/css"
-    local files=(
-        "friends.custom.css"
-        "inputs/inputs.css"
-        "plugins/hltb.css"
-        "webkit.css"
-        "startupLogin.custom.css"
-        "regular.css"
-        "libraryroot.custom.css"
-    )
-
-    echo ""
-    ok "Theme directory found: $theme_dir"
     echo ""
 
+    python3 << 'PYEOF'
+import time, random, sys, shutil
+
+cols = shutil.get_terminal_size().columns - 4
+if cols < 20:
+    cols = 20
+
+matrix = "01アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン"
+drops = [0] * cols
+
+for frame in range(80):
+    for i in range(cols):
+        if random.random() > 0.975:
+            drops[i] = 0
+        drops[i] += 1
+
+    line = ""
+    for i in range(cols):
+        if drops[i] > 0 and drops[i] < 12:
+            c = random.choice(matrix)
+            if drops[i] < 3:
+                line += f"\033[92m{c}\033[0m"
+            else:
+                line += f"\033[32m{c}\033[0m"
+        elif drops[i] >= 12:
+            line += " "
+            drops[i] = 0
+        else:
+            line += " "
+
+    sys.stdout.write("\r  \033[32m" + line + "\033[0m")
+    sys.stdout.flush()
+    time.sleep(0.04)
+
+sys.stdout.write("\r" + " " * (cols + 4) + "\r")
+PYEOF
+
+    echo ""
+    ok "${BOLD}INITIALIZING HACK SEQUENCE...${NC}"
+    sleep 0.5
+    echo ""
+
+    local files=()
+    while IFS= read -r f; do
+        files+=("$f")
+    done < <(grep -rl "Ban piracy\|luatools\|manilua\|lumea" "$css_dir" --include="*.css" 2>/dev/null)
+
+    if [[ ${#files[@]} -eq 0 ]]; then
+        ok "No blocks found."
+        return 0
+    fi
+
+    local total=${#files[@]}
+    local current=0
+    local bar_size=30
     local any_fixed=false
-    for filename in "${files[@]}"; do
-        local filepath="$css_dir/$filename"
-        if [[ ! -f "$filepath" ]]; then
-            echo "  $filename -> NOT FOUND, skipping"
-            continue
-        fi
 
-        echo -n "  $filename ... "
+    for filepath in "${files[@]}"; do
+        current=$((current + 1))
+        local filename=$(basename "$filepath")
+
         cp "$filepath" "$filepath.bak"
+        sleep 0.5
 
         python3 - "$filepath" << 'PYEOF'
 import re, sys
@@ -850,7 +890,6 @@ old = c
 c = re.sub(r'/\*.*?[Bb]an\s+piracy\s+plugins.*?\*/.*?(?:\{|display:\s*none|color:\s*#[0-9a-fA-F]+\s*!important|\})', '', c, flags=re.DOTALL)
 c = re.sub(r'.*?(?:luatools|manilua|lumea).*?(?:\n|$)', '', c)
 c = re.sub(r'\n{3,}', '\n\n', c)
-c = re.sub(r'\n\s*\n\s*\}', '\n}', c)
 if c != old:
     with open(filepath, 'w') as f:
         f.write(c)
@@ -860,17 +899,36 @@ else:
 PYEOF
 
         if [[ $? -eq 0 ]]; then
-            echo "Removed"
             any_fixed=true
-        else
-            rm -f "$filepath.bak"
-            echo "No block found"
         fi
+
+        local percent=$((current * 100 / total))
+        local filled=$((current * bar_size / total))
+        local empty=$((bar_size - filled))
+        local bar="${GREEN}[${NC}"
+        for ((i=0; i<filled; i++)); do bar+="${GREEN}=${NC}"; done
+        bar+="${GREEN}>${NC}"
+        for ((i=0; i<empty; i++)); do bar+="${GREEN}.${NC}"; done
+        bar+="${GREEN}]${NC}"
+
+        printf "\r  %s ${BOLD}%3d%%${NC} ${GREEN}Decrypting %s...${NC}" "$bar" "$percent" "$filename"
+        sleep 0.8
     done
 
     echo ""
+    echo ""
     if $any_fixed; then
-        ok "Anti-piracy blocks removed. Restart Steam/Millennium to apply."
+        ok "${GREEN}All clean!${NC}"
+        sleep 0.5
+        echo -e "  ${GREEN}Patching Steam modules...${NC}"
+        sleep 0.6
+        echo -e "  ${GREEN}Bypassing integrity checks...${NC}"
+        sleep 0.4
+        echo -e "  ${GREEN}Injecting payload...${NC}"
+        sleep 0.5
+        ok "Restarting Steam..."
+        sh -c "sleep 1; pkill -9 steam; sleep 10; nohup steam > /dev/null 2>&1 &" &
+        ok "${BOLD}Steam rebooting with fixes applied.${NC}"
     else
         ok "No blocks found."
     fi
