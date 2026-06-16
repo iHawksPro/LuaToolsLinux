@@ -1142,25 +1142,54 @@ fix_speed_units_explanation() {
 }
 # ===== END NEW FIX FUNCTIONS =====
 
+show_tutorial() {
+    echo ""
+    echo -e "${BOLD}${YELLOW}╔══════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${BOLD}${YELLOW}║              ACCELA CONFIGURATION TUTORIAL                 ║${NC}"
+    echo -e "${BOLD}${YELLOW}╚══════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "${YELLOW}You probably skipped the post-installation configuration.${NC}"
+    echo -e "${YELLOW}You did NOT set the Accela path in LuaTools menu, or you are trying to download directly from Steam without Accela.${NC}"
+    echo ""
+    echo -e "${BOLD}Follow the instructions below:${NC}"
+    echo ""
+    echo -e "  ${BOLD}${GREEN}1)${NC} Open accela, config options/downloads."
+    echo -e "  ${BOLD}${GREEN}2)${NC} Ensure the option ${BOLD}\"Limit downloads to Steam Library\"${NC} is ${BOLD}ENABLED${NC}."
+    echo -e "  ${BOLD}${GREEN}3)${NC} In Steam, click the Steam name at the top-left corner."
+    echo -e "     Open Millennium ${GREEN}→${NC} Plugins tab ${GREEN}→${NC} Enable ${BOLD}LuaTools${NC}."
+    echo -e "  ${BOLD}${GREEN}4)${NC} Go to Lua tools menu on Steam/config ${BOLD}\"External Launcher (ACCELA)\"${NC}"
+    echo -e "     and click the folder icon."
+    echo -e "  ${BOLD}${GREEN}5)${NC} Navigate to ${BOLD}~/.local/share/ACCELA${NC} and select:"
+    echo -e "       - ${GREEN}run.sh${NC} (if installed as script) or"
+    echo -e "       - ${GREEN}ACCELA.AppImage${NC} (if using AppImage)"
+    echo -e "  ${BOLD}${GREEN}6)${NC} Click the save icon (diskette)."
+    echo -e "  ${BOLD}${GREEN}7)${NC} You can now add your game directly from the game page."
+    echo ""
+    read -p "  Press Enter to continue..." < /dev/tty
+}
+
 fix_menu() {
     while true; do
         echo ""
-        echo -e "${BOLD}Common Issues Fixes${NC}"
-        echo "1) Purchase error or slssteam issues (headcrab)"
-        echo "2) Missing Keys"
-        echo "3) No licenses (information)"
-        echo "4) Run fix-deps (install system dependencies)"
-        echo "5) Remove anti-piracy blocks from Steam theme CSS"
-        echo "6) Reinstall Steam completely (clean) - WILL DELETE GAMES!"
-        echo "7) Missing game executable / Fail on compatibility tool (info)"
-        echo "8) Content Still Encrypted (info)"
-        echo "9) Online Fix doesn't work (info)"
-        echo "10) Crack don't work?"
-        echo "11) Game not downloading? Read Important Configuration Note"
-        echo "12) Accela download speed slower than Steam? Read explanation"
-        echo "13) Back to main menu"
+        echo -e "${BOLD}${CYAN}╔══════════════════════════════════════╗${NC}"
+        echo -e "${BOLD}${CYAN}║         COMMON ISSUES FIXES          ║${NC}"
+        echo -e "${BOLD}${CYAN}╚══════════════════════════════════════╝${NC}"
         echo ""
-        printf "Choose an option [1-13]: " > /dev/tty
+        echo -e "  ${GREEN} 1)${NC} Purchase error / slssteam (headcrab)"
+        echo -e "  ${GREEN} 2)${NC} Missing Keys"
+        echo -e "  ${GREEN} 3)${NC} No licenses (info)"
+        echo -e "  ${GREEN} 4)${NC} Run fix-deps (install dependencies)"
+        echo -e "  ${GREEN} 5)${NC} Remove anti-piracy blocks from theme"
+        echo -e "  ${RED} 6)${NC} Reinstall Steam completely - ${RED}DELETES GAMES!${NC}"
+        echo -e "  ${GREEN} 7)${NC} Missing game executable (info)"
+        echo -e "  ${GREEN} 8)${NC} Content Still Encrypted (info)"
+        echo -e "  ${GREEN} 9)${NC} Online Fix doesn't work (info)"
+        echo -e "  ${GREEN}10)${NC} Crack don't work?"
+        echo -e "  ${GREEN}11)${NC} Game not downloading? Configuration"
+        echo -e "  ${GREEN}12)${NC} Accela speed slower? Explanation"
+        echo -e "  ${YELLOW}13)${NC} Back to main menu"
+        echo ""
+        printf "  ${BOLD}Choose [1-13]:${NC} " > /dev/tty
         local choice; read -r choice < /dev/tty
         case "$choice" in
             1) fix_purchase_error ;;
@@ -1203,17 +1232,22 @@ uninstall_all_flow() {
 interactive_menu() {
     while true; do
         echo ""
-        echo -e "${BOLD}LuaTools Installer${NC}"
-        echo "1) Install All (Millennium beta + plugin + accela standard)"
-        echo "2) Install/Reinstall LuaTools plugin only (keeps Millennium)"
-        echo "3) Install accela and slssteam only (standard - AppImage)"
-        echo "4) Install Accela to issue illegal instructions (by Cybercountry) + slssteam"
-        echo "5) Install Legacy Accela (run.sh) + SLSsteam (fix for AppImage issues)"
-        echo "6) Fix common issues"
-        echo "7) Uninstall Everything"
-        echo "8) Cancel"
+        echo -e "${BOLD}${GREEN}╔══════════════════════════════════════════════════╗${NC}"
+        echo -e "${BOLD}${GREEN}║              LUA TOOLS INSTALLER                 ║${NC}"
+        echo -e "${BOLD}${GREEN}╚══════════════════════════════════════════════════╝${NC}"
         echo ""
-        printf "Choose an option [1-8]: " > /dev/tty
+        echo -e "  ${GREEN} 1)${NC} Install All ${CYAN}(Millennium + plugin + accela)${NC}"
+        echo -e "  ${GREEN} 2)${NC} Install/Reinstall LuaTools plugin only"
+        echo -e "  ${GREEN} 3)${NC} Install accela and slssteam only ${CYAN}(AppImage)${NC}"
+        echo -e "  ${GREEN} 4)${NC} Install Accela fix ${CYAN}(illegal instruction)${NC}"
+        echo -e "  ${GREEN} 5)${NC} Install Legacy Accela ${CYAN}(run.sh)${NC}"
+        echo -e "  ${YELLOW} 6)${NC} Fix common issues"
+        echo -e "  ${YELLOW} 7)${NC} Tutorial: Accela configuration"
+        echo -e "  ${RED} 8)${NC} Uninstall Everything"
+        echo -e "  ${RED} 9)${NC} Cancel"
+        echo ""
+        echo -e "${BOLD}${CYAN}──────────────────────────────────────────────────────${NC}"
+        printf "  ${BOLD}Choose [1-9]:${NC} " > /dev/tty
         local choice; read -r choice < /dev/tty
         case "$choice" in
             1) install_all ; break ;;
@@ -1222,8 +1256,9 @@ interactive_menu() {
             4) install_accela_fix_illegal_instruction ; break ;;
             5) install_legacy_accela_and_sls_only ; break ;;
             6) fix_menu ;;
-            7) uninstall_all_flow ; break ;;
-            8) info "Cancelled." ; exit 0 ;;
+            7) show_tutorial ;;
+            8) uninstall_all_flow ; break ;;
+            9) info "Cancelled." ; exit 0 ;;
             *) warn "Invalid option." ;;
         esac
     done
@@ -1256,7 +1291,8 @@ main() {
         4|--fix-accela)        install_accela_fix_illegal_instruction ;;
         5|--legacy-accela)     install_legacy_accela_and_sls_only ;;
         6|--fix)               fix_menu ;;
-        7|--uninstall)         uninstall_all_flow ;;
+         7|--tutorial)          show_tutorial ;;
+         8|--uninstall)         uninstall_all_flow ;;
         --cancel)              info "Cancelled." ; exit 0 ;;
         -h|--help)
             cat <<'EOF'
@@ -1269,7 +1305,8 @@ Options:
     4, --fix-accela        Install Accela to fix illegal instruction (by Cybercountry) + slssteam
     5, --legacy-accela     Install Legacy Accela (source-based, run.sh) + SLSsteam (FIX)
     6, --fix               Open fixes menu
-    7, --uninstall         Uninstall everything
+    7, --tutorial          Show Accela configuration tutorial
+    8, --uninstall         Uninstall everything
     --cancel               Exit
     --debug                Enable debug output
     -h, --help             Show this help
