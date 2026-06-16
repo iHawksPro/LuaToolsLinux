@@ -476,7 +476,7 @@ is_millennium_installed() {
         result=$(grep -i "version" "$HOME/.local/share/millennium/bootstrap.log" 2>/dev/null)
     fi
     [[ -n "$result" ]] && return 0
-    [[ -f "/usr/lib/millennium/libmillennium.so" ]] || [[ -f "/usr/bin/steam.millennium.bak" ]]
+    [[ -d "/usr/lib/millennium" && -n "$(ls /usr/lib/millennium/*.so 2>/dev/null | head -1)" ]] || [[ -f "/usr/bin/steam.millennium.bak" ]]
 }
 
 get_millennium_version() {
@@ -509,8 +509,9 @@ get_millennium_version() {
     else
         if [[ -f "/usr/lib/millennium/version.txt" ]]; then
             cat "/usr/lib/millennium/version.txt" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1
-        elif [[ -f "/usr/lib/millennium/libmillennium.so" ]]; then
-            strings "/usr/lib/millennium/libmillennium.so" 2>/dev/null | grep -oE 'Millennium v[0-9]+\.[0-9]+\.[0-9]+' | head -1 | sed 's/.*v//'
+        elif ls /usr/lib/millennium/libmillennium*.so 2>/dev/null | head -1 | grep -q .; then
+            local so_file=$(ls /usr/lib/millennium/libmillennium*.so 2>/dev/null | head -1)
+            strings "$so_file" 2>/dev/null | grep -oE 'Millennium v[0-9]+\.[0-9]+\.[0-9]+' | head -1 | sed 's/.*v//'
         else
             echo ""
         fi
