@@ -855,7 +855,7 @@ sys.stdout.write("\r" + " " * (cols + 4) + "\r")
 PYEOF
 
     echo ""
-    ok "${BOLD}INITIALIZING HACK SEQUENCE...${NC}"
+    ok "${BOLD}BREAKING ANTI-PIRACY LOCKS...${NC}"
     sleep 0.5
     echo ""
 
@@ -911,7 +911,7 @@ PYEOF
         for ((i=0; i<empty; i++)); do bar+="${GREEN}.${NC}"; done
         bar+="${GREEN}]${NC}"
 
-        printf "\r  %s ${BOLD}%3d%%${NC} ${GREEN}Decrypting %s...${NC}" "$bar" "$percent" "$filename"
+        printf "\r  %s ${BOLD}%3d%%${NC} ${GREEN}Cracking %s...${NC}" "$bar" "$percent" "$filename"
         sleep 0.8
     done
 
@@ -920,11 +920,11 @@ PYEOF
     if $any_fixed; then
         ok "${GREEN}All clean!${NC}"
         sleep 0.5
-        echo -e "  ${GREEN}Patching Steam modules...${NC}"
+        echo -e "  ${GREEN}Removing display:none traps...${NC}"
         sleep 0.6
-        echo -e "  ${GREEN}Bypassing integrity checks...${NC}"
+        echo -e "  ${GREEN}Neutralizing CSS selectors...${NC}"
         sleep 0.4
-        echo -e "  ${GREEN}Injecting payload...${NC}"
+        echo -e "  ${GREEN}Stripping content blockers...${NC}"
         sleep 0.5
         ok "Restarting Steam..."
         sh -c "sleep 1; pkill -9 steam; sleep 10; nohup steam > /dev/null 2>&1 &" &
